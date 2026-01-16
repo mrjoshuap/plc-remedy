@@ -190,6 +190,24 @@ class PLCClient:
             except Exception:
                 return False
     
+    def check_connection_health(self) -> bool:
+        """Check if the PLC connection is still alive without blocking.
+        
+        This is a lightweight check that doesn't perform a full read operation.
+        
+        Returns:
+            True if connection appears healthy, False otherwise
+        """
+        with self._lock:
+            if self._driver is None:
+                return False
+            # Check if driver reports connected status
+            try:
+                return self._driver.connected
+            except Exception as e:
+                logger.debug(f"Connection health check failed: {e}")
+                return False
+    
     def _populate_tags_from_config(self) -> None:
         """Manually populate pycomm3's _tags dictionary from config.
         
@@ -297,7 +315,41 @@ class PLCClient:
             driver = self._driver
         
         # Perform network I/O OUTSIDE the lock to avoid blocking API requests
+        # Check connection health before attempting read
+        if not self.check_connection_health():
+            logger.warning(f"Connection health check failed before reading tag '{tag_name}', attempting reconnect")
+            # Connection appears dead, try to reconnect
+            if not self.connect():
+                error_msg = "Connection health check failed and reconnect attempt failed"
+                with self._lock:
+                    self._stats.total_errors += 1
+                    self._stats.last_error = error_msg
+                return TagResult(
+                    tag_name=tag_name,
+                    value=None,
+                    timestamp=timestamp,
+                    success=False,
+                    error=error_msg
+                )
+            # Re-check after reconnect
+            with self._lock:
+                driver = self._driver
+            if driver is None:
+                error_msg = "PLC driver not available after reconnect"
+                with self._lock:
+                    self._stats.total_errors += 1
+                    self._stats.last_error = error_msg
+                return TagResult(
+                    tag_name=tag_name,
+                    value=None,
+                    timestamp=timestamp,
+                    success=False,
+                    error=error_msg
+                )
+        
         try:
+            # Perform read with explicit timeout awareness
+            # The LogixDriver should use self.config.timeout, but we'll catch timeout-related errors
             result = driver.read(tag_name)
             
             # Update statistics INSIDE the lock

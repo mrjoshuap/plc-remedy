@@ -159,17 +159,43 @@ class MonitorService:
     
     def _poll_cycle(self) -> None:
         """Execute one polling cycle."""
-        # Get actual PLC tag names from config (not the config keys)
+        results = {}  # Initialize results to empty dict in case of early return
         tag_mapping = {}  # Maps config key -> actual PLC tag name
-        tag_names = []  # List of actual PLC tag names to read
-        for config_key, tag_config in self.config.tags.items():
-            actual_tag_name = tag_config.name  # Use the 'name' field from config
-            tag_mapping[actual_tag_name] = config_key  # Reverse mapping for results
-            tag_names.append(actual_tag_name)
         
-        # Read all tags using actual PLC tag names (OUTSIDE the lock to avoid blocking API requests)
-        results = self.plc_client.read_tags(tag_names)
-        logger.debug(f"Read tags results: {[(k, v.success, v.value if v.success else v.error) for k, v in results.items()]}")
+        try:
+            # Get actual PLC tag names from config (not the config keys)
+            tag_names = []  # List of actual PLC tag names to read
+            for config_key, tag_config in self.config.tags.items():
+                actual_tag_name = tag_config.name  # Use the 'name' field from config
+                tag_mapping[actual_tag_name] = config_key  # Reverse mapping for results
+                tag_names.append(actual_tag_name)
+            
+            # Check connection health before attempting reads
+            if not self.plc_client.check_connection_health():
+                logger.warning("PLC connection health check failed in poll cycle, attempting reconnect")
+                if not self.plc_client.connect():
+                    logger.error("Failed to reconnect to PLC in poll cycle, skipping this cycle")
+                    return  # Skip this poll cycle if connection fails
+            
+            # Read all tags using actual PLC tag names (OUTSIDE the lock to avoid blocking API requests)
+            # Wrap in try-except to prevent blocking on read failures
+            try:
+                results = self.plc_client.read_tags(tag_names)
+                logger.debug(f"Read tags results: {[(k, v.success, v.value if v.success else v.error) for k, v in results.items()]}")
+            except Exception as e:
+                logger.error(f"Error reading tags in poll cycle: {e}", exc_info=True)
+                # Continue with empty results to avoid blocking
+                results = {}
+                # Try to reconnect for next cycle
+                try:
+                    self.plc_client.connect()
+                except Exception as reconnect_error:
+                    logger.warning(f"Failed to reconnect after read error: {reconnect_error}")
+        except Exception as e:
+            logger.error(f"Error in poll cycle: {e}", exc_info=True)
+            # Don't let poll cycle errors stop the monitor service
+            # results is already initialized to empty dict, so we can continue
+            pass
         
         # Map results back to config keys for internal storage
         mapped_results = {}

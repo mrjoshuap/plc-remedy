@@ -51,7 +51,7 @@ python run.py
 ```
 
 7. **Open dashboard:**
-   - Navigate to http://localhost:5000
+   - Navigate to http://localhost:15000
    - You should see the dashboard with real-time updates
 
 ## Testing the System
@@ -67,7 +67,7 @@ python mock/cip_plc.py --ip 127.0.0.1 --port 44818 --mode degraded
 
 3. Trigger remediation:
    - Click "Emergency Reset" button in dashboard
-   - Or use API: `curl -X POST http://localhost:5000/api/v1/remediate/reset`
+   - Or use API: `curl -X POST http://localhost:15000/api/v1/remediate/reset`
 
 ### Test Chaos Engineering
 

@@ -1,14 +1,12 @@
 # Mock PLC Limitations
 
-## Important Note
+## Overview
 
-The **original** mock PLC simulator (`mock/mock_plc.py`) has been **deprecated and removed**. It used a simplified CIP protocol and was not fully compatible with `pycomm3`.
+The CIP-compatible mock PLC (`mock/cip_plc.py`) provides full CIP protocol support using the `cpppo` library and works seamlessly with `pycomm3` for basic tag operations.
 
-**Current Solution:** A CIP-compatible mock PLC (`mock/cip_plc.py`) is available that provides full CIP protocol support using the `cpppo` library. See [MOCK_PLC_MIGRATION.md](MOCK_PLC_MIGRATION.md) for details.
+### Known Limitations
 
-### Known Limitations of CIP-Compatible Mock PLC
-
-The CIP-compatible mock PLC (`mock/cip_plc.py`) has the following limitations:
+The CIP-compatible mock PLC has the following limitations:
 
 1. **Multiple Service Packet (MSP) Not Supported**: 
    - pycomm3's LogixDriver may use Multiple Service Packets (MSP) for some operations
@@ -118,4 +116,4 @@ The mock PLC is useful for:
 - Development when a real PLC isn't available
 - Learning about the application's architecture
 
-But it **cannot** be used for testing actual PLC communication with pycomm3.
+The mock PLC successfully works with pycomm3 for basic tag reading and writing operations, making it suitable for development and testing when a real PLC is not available.

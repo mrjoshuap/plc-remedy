@@ -84,7 +84,7 @@ export AAP_TOKEN="your-aap-token"
 python run.py
 ```
 
-The dashboard will be available at http://localhost:5000
+The dashboard will be available at http://localhost:15000
 
 ### Containerized Deployment
 
@@ -169,11 +169,7 @@ pip install -r requirements.txt
 
 **Important:** Due to limitations in the cpppo library and pycomm3's protocol handling, the mock PLC must simulate a Micro800 PLC. This is because pycomm3 only disables Multiple Service Packets (MSP) for Micro800 devices, which is necessary since the mock PLC cannot properly handle MSP requests. The application automatically configures pycomm3 to treat the mock PLC as a Micro800 device when in mock mode.
 
-See [MOCK_PLC_MIGRATION.md](MOCK_PLC_MIGRATION.md) for migration guide and details.
-
-### Legacy Mock PLC
-
-The original simplified mock PLC (`mock/mock_plc.py`) has been **deprecated and removed**. Use `mock/cip_plc.py` instead. See [MOCK_PLC_LIMITATIONS.md](MOCK_PLC_LIMITATIONS.md) for details.
+See [MOCK_PLC_LIMITATIONS.md](MOCK_PLC_LIMITATIONS.md) for details on mock PLC limitations.
 
 ### Operating Modes
 
@@ -193,7 +189,7 @@ Both mock PLCs support the same operating modes:
 
 ### Web Dashboard
 
-1. Open http://localhost:5000 in your browser
+1. Open http://localhost:15000 in your browser
 2. Monitor real-time tag values, connection status, and violations
 3. View time-series charts for motor speed and light status
 4. Trigger manual remediation actions
@@ -205,55 +201,55 @@ Both mock PLCs support the same operating modes:
 #### Health & Status
 ```bash
 # Health check
-curl http://localhost:5000/api/v1/health
+curl http://localhost:15000/api/v1/health
 
 # Get current status
-curl http://localhost:5000/api/v1/status
+curl http://localhost:15000/api/v1/status
 ```
 
 #### Tags & Metrics
 ```bash
 # Get all tag values
-curl http://localhost:5000/api/v1/tags
+curl http://localhost:15000/api/v1/tags
 
 # Get specific tag with history
-curl http://localhost:5000/api/v1/tags/Motor_Speed
+curl http://localhost:15000/api/v1/tags/Motor_Speed
 
 # Get aggregated metrics
-curl http://localhost:5000/api/v1/metrics
+curl http://localhost:15000/api/v1/metrics
 ```
 
 #### Events
 ```bash
 # Get recent events
-curl http://localhost:5000/api/v1/events
+curl http://localhost:15000/api/v1/events
 
 # Get active violations
-curl http://localhost:5000/api/v1/events/violations?active=true
+curl http://localhost:15000/api/v1/events/violations?active=true
 ```
 
 #### Remediation
 ```bash
 # Trigger emergency stop
-curl -X POST http://localhost:5000/api/v1/remediate/stop
+curl -X POST http://localhost:15000/api/v1/remediate/stop
 
 # Trigger emergency reset
-curl -X POST http://localhost:5000/api/v1/remediate/reset
+curl -X POST http://localhost:15000/api/v1/remediate/reset
 
 # Get remediation status
-curl http://localhost:5000/api/v1/remediate/status
+curl http://localhost:15000/api/v1/remediate/status
 ```
 
 #### Chaos Engineering
 ```bash
 # Get chaos status
-curl http://localhost:5000/api/v1/chaos/status
+curl http://localhost:15000/api/v1/chaos/status
 
 # Enable chaos injection
-curl -X POST http://localhost:5000/api/v1/chaos/enable
+curl -X POST http://localhost:15000/api/v1/chaos/enable
 
 # Inject specific failure
-curl -X POST http://localhost:5000/api/v1/chaos/inject \
+curl -X POST http://localhost:15000/api/v1/chaos/inject \
   -H "Content-Type: application/json" \
   -d '{"failure_type": "connection_loss", "duration_seconds": 10}'
 ```
@@ -375,7 +371,7 @@ black app/ tests/
 
 ## Limitations
 
-- **Mock PLC**: The mock PLC simulator uses a simplified CIP protocol. For full CIP compatibility, use a real PLC or commercial simulator.
+- **Mock PLC**: The mock PLC simulator has some limitations (see [MOCK_PLC_LIMITATIONS.md](MOCK_PLC_LIMITATIONS.md)). For full CIP compatibility, use a real PLC or commercial simulator.
 - **Data Persistence**: Currently uses in-memory storage. For production, consider adding SQLite or PostgreSQL persistence.
 - **Single PLC**: The current implementation monitors one PLC. Multi-PLC support can be added by extending the architecture.
 

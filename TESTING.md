@@ -33,7 +33,7 @@ python run.py
 ```
 
 5. **Open the dashboard:**
-   - Navigate to http://localhost:5000
+   - Navigate to http://localhost:15000
    - You should see real-time updates from the mock PLC
 
 ## Testing Scenarios
@@ -133,38 +133,38 @@ python mock/cip_plc.py --mode failed
 
 ### Test Health Endpoint
 ```bash
-curl http://localhost:5000/api/v1/health
+curl http://localhost:15000/api/v1/health
 ```
 
 ### Test Status Endpoint
 ```bash
-curl http://localhost:5000/api/v1/status | jq
+curl http://localhost:15000/api/v1/status | jq
 ```
 
 ### Test Tag Reading
 ```bash
-curl http://localhost:5000/api/v1/tags | jq
+curl http://localhost:15000/api/v1/tags | jq
 ```
 
 ### Test Remediation
 ```bash
 # Trigger emergency reset
-curl -X POST http://localhost:5000/api/v1/remediate/reset | jq
+curl -X POST http://localhost:15000/api/v1/remediate/reset | jq
 
 # Check status
-curl http://localhost:5000/api/v1/remediate/status | jq
+curl http://localhost:15000/api/v1/remediate/status | jq
 ```
 
 ### Test Chaos Engineering
 ```bash
 # Get chaos status
-curl http://localhost:5000/api/v1/chaos/status | jq
+curl http://localhost:15000/api/v1/chaos/status | jq
 
 # Enable chaos
-curl -X POST http://localhost:5000/api/v1/chaos/enable | jq
+curl -X POST http://localhost:15000/api/v1/chaos/enable | jq
 
 # Inject connection loss
-curl -X POST http://localhost:5000/api/v1/chaos/inject \
+curl -X POST http://localhost:15000/api/v1/chaos/inject \
   -H "Content-Type: application/json" \
   -d '{"failure_type": "connection_loss", "duration_seconds": 10}' | jq
 ```
@@ -192,10 +192,6 @@ pytest tests/ --cov=app --cov-report=html
 The `cip_plc.py` provides full CIP protocol support and is compatible with pycomm3. All dependencies including `cpppo` are installed via `requirements.txt`.
 
 **Important:** Due to limitations in the cpppo library and pycomm3's protocol handling, the mock PLC must simulate a Micro800 PLC. This is because pycomm3 only disables Multiple Service Packets (MSP) for Micro800 devices, which is necessary since the mock PLC cannot properly handle MSP requests. The application automatically configures pycomm3 to treat the mock PLC as a Micro800 device when in mock mode.
-
-### Legacy Mock PLC
-
-**Note:** The legacy `mock_plc.py` has been deprecated and removed. Use `cip_plc.py` for all testing.
 
 For best results:
 1. **Use a real PLC** for production testing

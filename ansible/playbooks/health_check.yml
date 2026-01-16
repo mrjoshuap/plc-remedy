@@ -3,7 +3,7 @@
   hosts: localhost
   gather_facts: false
   vars:
-    middleware_url: "{{ lookup('env', 'MIDDLEWARE_URL', default='http://localhost:5000') }}"
+    middleware_url: "{{ lookup('env', 'MIDDLEWARE_URL', default='http://localhost:15000') }}"
   
   tasks:
     - name: Get middleware status

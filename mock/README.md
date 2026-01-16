@@ -46,12 +46,6 @@ if driver.connected:
 driver.close()
 ```
 
-## Legacy Mock PLC
-
-**File:** `mock_plc.py`
-
-The original simplified mock PLC has been **deprecated and removed**. It did not implement full CIP protocol and was incompatible with pycomm3. Use `cip_plc.py` instead.
-
 ## Architecture
 
 ```
@@ -61,8 +55,6 @@ mock/
 ├── cip_objects.py      # CIP object definitions
 └── cip_services.py     # CIP service handlers
 ```
-
-**Note:** The legacy `mock_plc.py` has been deprecated and removed. Use `cip_plc.py` for all testing.
 
 ## Operating Modes
 
@@ -84,8 +76,7 @@ Default tags match the configuration in `config/config.yaml`:
 
 ## Documentation
 
-- [MOCK_PLC_MIGRATION.md](../MOCK_PLC_MIGRATION.md) - Migration guide from legacy to CIP PLC
-- [MOCK_PLC_LIMITATIONS.md](../MOCK_PLC_LIMITATIONS.md) - Limitations of legacy mock PLC
+- [MOCK_PLC_LIMITATIONS.md](../MOCK_PLC_LIMITATIONS.md) - Mock PLC limitations and Micro800 simulation requirements
 
 ## Troubleshooting
 

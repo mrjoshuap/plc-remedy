@@ -5,6 +5,8 @@ import uuid
 from datetime import datetime
 from typing import Dict, Any, Optional
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from app.config import AAPConfig
 
@@ -22,6 +24,24 @@ class AAPClient:
         """
         self.config = config
         self._session = requests.Session()
+        
+        # Configure connection pooling and retry strategy
+        retry_strategy = Retry(
+            total=3,  # Total number of retries
+            backoff_factor=0.3,  # Wait 0.3, 0.6, 1.2 seconds between retries
+            status_forcelist=[429, 500, 502, 503, 504],  # Retry on these status codes
+            allowed_methods=["GET", "POST"]  # Only retry safe methods
+        )
+        
+        adapter = HTTPAdapter(
+            max_retries=retry_strategy,
+            pool_connections=10,  # Number of connection pools to cache
+            pool_maxsize=10,  # Maximum number of connections to save in the pool
+            pool_block=False  # Don't block if pool is full, raise exception instead
+        )
+        
+        self._session.mount("http://", adapter)
+        self._session.mount("https://", adapter)
         
         if not config.mock_mode:
             # Set up authentication for real AAP

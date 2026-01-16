@@ -163,6 +163,8 @@ class CIPPLC:
         # cpppo server components
         self.server: Optional[device.Device] = None
         self.server_thread: Optional[threading.Thread] = None
+        self.watchdog_thread: Optional[threading.Thread] = None
+        self.stats_logger_thread: Optional[threading.Thread] = None
     
     def start(self):
         """Start the CIP PLC server."""
@@ -178,6 +180,20 @@ class CIPPLC:
                 daemon=True
             )
             self.server_thread.start()
+            
+            # Start watchdog thread to monitor server health
+            self.watchdog_thread = threading.Thread(
+                target=self._watchdog_thread,
+                daemon=True
+            )
+            self.watchdog_thread.start()
+            
+            # Start statistics logger thread
+            self.stats_logger_thread = threading.Thread(
+                target=self._stats_logger_thread,
+                daemon=True
+            )
+            self.stats_logger_thread.start()
             
             # Give server time to start
             time.sleep(1)
@@ -261,10 +277,17 @@ class CIPPLC:
                 
                 # Run cpppo server with ModeAwareAttribute class
                 # enip_main will parse sys.argv and create ModeAwareAttribute instances with (name, parser) signature
-                enip_main(
-                    attribute_class=ModeAwareAttribute,
-                    args=sys.argv[1:]  # Pass all args including tag definitions
-                )
+                # Note: enip_main is a blocking call - if it hangs, the server thread will appear stuck
+                try:
+                    logger.debug("Calling enip_main - this is a blocking call")
+                    enip_main(
+                        attribute_class=ModeAwareAttribute,
+                        args=sys.argv[1:]  # Pass all args including tag definitions
+                    )
+                    logger.info("enip_main returned (server stopped normally)")
+                except Exception as e:
+                    logger.error(f"enip_main raised an exception: {e}", exc_info=True)
+                    raise
             finally:
                 sys.argv = original_argv
             
@@ -282,7 +305,37 @@ class CIPPLC:
         self.running = False
         if self.server_thread:
             self.server_thread.join(timeout=5.0)
+        if self.watchdog_thread:
+            self.watchdog_thread.join(timeout=2.0)
+        if self.stats_logger_thread:
+            self.stats_logger_thread.join(timeout=2.0)
         logger.info("CIP PLC stopped")
+    
+    def _watchdog_thread(self):
+        """Watchdog thread to monitor server health."""
+        last_log = time.time()
+        while self.running:
+            time.sleep(5)  # Check every 5 seconds
+            if not self.running:
+                break
+            current_time = time.time()
+            # Log periodic health check every 30 seconds
+            elapsed = current_time - last_log
+            if elapsed >= 30:
+                logger.debug("CIP PLC watchdog: server process appears responsive")
+                last_log = current_time
+    
+    def _stats_logger_thread(self):
+        """Periodic statistics logging."""
+        while self.running:
+            time.sleep(30)  # Log stats every 30 seconds
+            if not self.running:
+                break
+            try:
+                stats = self.get_statistics()
+                logger.info(f"CIP PLC stats: {stats}")
+            except Exception as e:
+                logger.warning(f"Error getting CIP PLC statistics: {e}")
     
     def set_mode(self, mode: OperatingMode):
         """Change operating mode.

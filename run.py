@@ -130,6 +130,77 @@ def create_app():
         if chaos_hook:
             monitor_service.set_chaos_hook(chaos_hook)
         
+        # Set remediation hook for auto-remediation
+        def remediation_hook(action: str) -> None:
+            """Trigger remediation action (for auto-remediation hook)."""
+            from datetime import datetime
+            import uuid
+            from app.models import RemediationStatus
+            from app.api.routes import _remediation_jobs, _last_remediation_time as api_last_remediation_time
+            
+            if not aap_client:
+                logger.warning("AAP client not available for auto-remediation")
+                return
+            
+            # Check cooldown (use API module's last remediation time)
+            if api_last_remediation_time:
+                cooldown = config.remediation.cooldown_seconds
+                elapsed = (datetime.now() - api_last_remediation_time).total_seconds()
+                if elapsed < cooldown:
+                    remaining = cooldown - elapsed
+                    logger.info(f"Auto-remediation skipped: cooldown active ({remaining:.1f}s remaining)")
+                    return
+            
+            # Get job template ID
+            template_key = f'emergency_{action}'
+            if template_key not in config.aap.job_templates:
+                logger.warning(f"Job template not configured for {action}")
+                return
+            
+            template_id = config.aap.job_templates[template_key]
+            
+            # Launch job
+            try:
+                job_result = aap_client.launch_job(template_id)
+                
+                if not job_result.get('success'):
+                    logger.error(f"Failed to launch auto-remediation job: {job_result.get('error')}")
+                    return
+                
+                # Create remediation job record
+                job_id = str(uuid.uuid4())
+                aap_job_id = job_result.get('job_id')
+                
+                remediation_job = {
+                    'job_id': job_id,
+                    'action_type': action,
+                    'status': RemediationStatus.PENDING.value,
+                    'start_time': datetime.now().isoformat(),
+                    'aap_job_id': aap_job_id
+                }
+                
+                # Add to API routes' remediation jobs dictionary
+                _remediation_jobs[job_id] = remediation_job
+                
+                # Update last remediation time in API module
+                import app.api.routes as api_routes
+                api_routes._last_remediation_time = datetime.now()
+                
+                # Emit event
+                if socketio:
+                    socketio.emit('remediation_triggered', {
+                        'job_id': job_id,
+                        'action': action,
+                        'aap_job_id': aap_job_id
+                    })
+                
+                logger.info(f"Auto-remediation triggered: {action} (job_id={job_id}, aap_job_id={aap_job_id})")
+                
+            except Exception as e:
+                logger.error(f"Error triggering auto-remediation: {e}", exc_info=True)
+        
+        monitor_service.set_remediation_hook(remediation_hook)
+        
         # Initialize API with dependencies
         init_api(monitor_service, aap_client, chaos_engine, config, socketio)
         

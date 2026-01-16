@@ -65,6 +65,9 @@ class MonitorService:
         
         # Chaos injection hook (set by chaos engine)
         self._chaos_hook: Optional[Callable[[str, Any], Any]] = None
+        
+        # Remediation trigger hook (set by app initialization)
+        self._remediation_hook: Optional[Callable[[str], None]] = None
     
     def set_chaos_hook(self, hook: Callable[[str, Any], Any]) -> None:
         """Set chaos injection hook.
@@ -73,6 +76,14 @@ class MonitorService:
             hook: Function that takes (tag_name, value) and returns modified value
         """
         self._chaos_hook = hook
+    
+    def set_remediation_hook(self, hook: Callable[[str], None]) -> None:
+        """Set remediation trigger hook.
+        
+        Args:
+            hook: Function that takes action type (str) and triggers remediation
+        """
+        self._remediation_hook = hook
     
     def start(self) -> None:
         """Start the monitoring thread."""
@@ -293,9 +304,11 @@ class MonitorService:
         # Handle violation (acquire lock only when modifying shared state)
         if violation:
             # Check if this is a new violation or existing one
+            is_new_violation = False
             with self._lock:
                 if tag_name not in self._active_violations:
                     # New violation
+                    is_new_violation = True
                     self._total_violations += 1
                     violation_obj = ThresholdViolation(
                         tag_name=tag_name,
@@ -316,6 +329,16 @@ class MonitorService:
             }, Severity.WARNING, tag_name)
             
             logger.warning(f"Threshold violation detected for {tag_name}: {violation_reason}")
+            
+            # Trigger auto-remediation if enabled and this is a new violation
+            if is_new_violation and self.config.remediation.auto_remediate and self._remediation_hook:
+                try:
+                    # Default to 'reset' action for auto-remediation
+                    # Could be made configurable per tag in the future
+                    logger.info(f"Auto-remediation enabled: triggering reset for violation on {tag_name}")
+                    self._remediation_hook('reset')
+                except Exception as e:
+                    logger.error(f"Error triggering auto-remediation: {e}", exc_info=True)
         else:
             # No violation - check if we need to resolve an existing one
             should_emit = False

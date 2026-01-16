@@ -293,6 +293,12 @@
                         <canvas id="light-status-chart"></canvas>
                     </div>
                 </div>
+                <div>
+                    <h3>Motor Direction</h3>
+                    <div class="chart-container">
+                        <canvas id="motor-direction-chart"></canvas>
+                    </div>
+                </div>
             </div>
         </div>
         
@@ -394,7 +400,8 @@
         let currentValues = {};
         let chartData = {
             motor_speed: { labels: [], values: [] },
-            light: { labels: [], values: [] }
+            light: { labels: [], values: [] },
+            motor_direction: { labels: [], values: [] }
         };
         
         // Initialize charts
@@ -416,7 +423,13 @@
                     responsive: true,
                     maintainAspectRatio: false,
                     scales: {
-                        y: { beginAtZero: false }
+                        y: {
+                            min: 0,  // Will be updated after config loads
+                            max: 3000,  // Will be updated after config loads
+                            ticks: {
+                                stepSize: 100
+                            }
+                        }
                     }
                 }
             });
@@ -441,7 +454,44 @@
                         y: { 
                             beginAtZero: true,
                             max: 1,
-                            ticks: { stepSize: 1 }
+                            ticks: { 
+                                stepSize: 1,
+                                callback: function(value) {
+                                    return value === 0 ? 'Off' : 'On';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            
+            const motorDirectionCtx = document.getElementById('motor-direction-chart').getContext('2d');
+            motorDirectionChart = new Chart(motorDirectionCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Motor Direction',
+                        data: [],
+                        borderColor: 'rgb(155, 89, 182)',
+                        backgroundColor: 'rgba(155, 89, 182, 0.1)',
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 2,
+                            ticks: {
+                                stepSize: 1,
+                                callback: function(value) {
+                                    const labels = ['Stopped', 'Forward', 'Reverse'];
+                                    return labels[value] || value;
+                                }
+                            }
                         }
                     }
                 }
@@ -526,6 +576,22 @@
                                 option.textContent = tagKey;
                                 tagSelect.appendChild(option);
                             });
+                        }
+                        
+                        // Update motor speed chart Y-axis with nominal range
+                        if (tagConfig.motor_speed) {
+                            const motorSpeedConfig = tagConfig.motor_speed;
+                            const thresholdLow = motorSpeedConfig.failure_threshold_low;
+                            const thresholdHigh = motorSpeedConfig.failure_threshold_high;
+                            
+                            if (thresholdLow != null && thresholdHigh != null && motorSpeedChart) {
+                                // Set Y-axis to show range with 20% padding on each side
+                                const range = thresholdHigh - thresholdLow;
+                                const padding = range * 0.2;
+                                motorSpeedChart.options.scales.y.min = Math.max(0, thresholdLow - padding);
+                                motorSpeedChart.options.scales.y.max = thresholdHigh + padding;
+                                motorSpeedChart.update('none');
+                            }
                         }
                     }
                     }
@@ -791,6 +857,19 @@
                 lightStatusChart.data.labels = chartData.light.labels;
                 lightStatusChart.data.datasets[0].data = chartData.light.values;
                 lightStatusChart.update('none');
+            } else if (tagName.includes('direction') || tagName.includes('Direction')) {
+                chartData.motor_direction.labels.push(now);
+                chartData.motor_direction.values.push(value);
+                
+                // Keep only last 50 points
+                if (chartData.motor_direction.labels.length > 50) {
+                    chartData.motor_direction.labels.shift();
+                    chartData.motor_direction.values.shift();
+                }
+                
+                motorDirectionChart.data.labels = chartData.motor_direction.labels;
+                motorDirectionChart.data.datasets[0].data = chartData.motor_direction.values;
+                motorDirectionChart.update('none');
             }
         }
         

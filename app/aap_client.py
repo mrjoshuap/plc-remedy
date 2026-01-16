@@ -46,10 +46,12 @@ class AAPClient:
         Raises:
             RuntimeError: If job launch fails
         """
-        if self.config.mock_mode:
-            return self._launch_mock_job(job_template_id, extra_vars)
-        else:
+        # Use HTTP requests if base_url is configured (even in mock_mode for mock server)
+        # Only use local simulation if no base_url is set
+        if self.config.base_url:
             return self._launch_real_job(job_template_id, extra_vars)
+        else:
+            return self._launch_mock_job(job_template_id, extra_vars)
     
     def _launch_real_job(self, job_template_id: int, extra_vars: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Launch a real AAP job.
@@ -122,10 +124,12 @@ class AAPClient:
         Returns:
             Dictionary with job status information
         """
-        if self.config.mock_mode:
-            return self._get_mock_job_status(job_id)
-        else:
+        # Use HTTP requests if base_url is configured (even in mock_mode for mock server)
+        # Only use local simulation if no base_url is set
+        if self.config.base_url:
             return self._get_real_job_status(job_id)
+        else:
+            return self._get_mock_job_status(job_id)
     
     def _get_real_job_status(self, job_id: int) -> Dict[str, Any]:
         """Get status of a real AAP job.
@@ -215,10 +219,12 @@ class AAPClient:
         Returns:
             Job output as string
         """
-        if self.config.mock_mode:
-            return self._get_mock_job_output(job_id)
-        else:
+        # Use HTTP requests if base_url is configured (even in mock_mode for mock server)
+        # Only use local simulation if no base_url is set
+        if self.config.base_url:
             return self._get_real_job_output(job_id)
+        else:
+            return self._get_mock_job_output(job_id)
     
     def _get_real_job_output(self, job_id: int) -> str:
         """Get stdout output from a real AAP job.

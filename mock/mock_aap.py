@@ -23,6 +23,8 @@ def launch_job(template_id):
     """Launch a mock job template."""
     global _job_counter
     
+    logger.info(f"Received job launch request for template {template_id}")
+    
     job_id = _job_counter
     _job_counter += 1
     
@@ -37,6 +39,8 @@ def launch_job(template_id):
     
     _jobs[job_id] = job
     
+    logger.info(f"Created job {job_id} for template {template_id}, status: pending")
+    
     return jsonify({
         'id': job_id,
         'status': 'pending',
@@ -48,7 +52,10 @@ def launch_job(template_id):
 @app.route('/api/v2/jobs/<int:job_id>/', methods=['GET'])
 def get_job(job_id):
     """Get job status."""
+    logger.info(f"Received job status request for job {job_id}")
+    
     if job_id not in _jobs:
+        logger.warning(f"Job {job_id} not found")
         return jsonify({'error': 'Job not found'}), 404
     
     job = _jobs[job_id]
@@ -62,10 +69,12 @@ def get_job(job_id):
     # 2-5 seconds: running
     # 5+ seconds: successful (or failed with 5% chance)
     
+    old_status = job['status']
     if job['status'] == 'pending':
         if elapsed_seconds >= 2:
             job['status'] = 'running'
             job['started'] = datetime.now().isoformat()
+            logger.info(f"Job {job_id} transitioned from pending to running (elapsed: {elapsed_seconds:.1f}s)")
     elif job['status'] == 'running':
         if elapsed_seconds >= 5:
             # 5% chance of failure to simulate real-world scenarios
@@ -74,6 +83,11 @@ def get_job(job_id):
             else:
                 job['status'] = 'successful'
             job['finished'] = datetime.now().isoformat()
+            logger.info(f"Job {job_id} transitioned from running to {job['status']} (elapsed: {elapsed_seconds:.1f}s)")
+    
+    # Log status if it changed
+    if old_status != job['status']:
+        logger.info(f"Job {job_id} status changed: {old_status} -> {job['status']}")
     
     # Calculate elapsed time for response
     if job.get('started'):
@@ -81,6 +95,8 @@ def get_job(job_id):
         elapsed = int((datetime.now() - started_time).total_seconds())
     else:
         elapsed = int(elapsed_seconds) if elapsed_seconds > 0 else 0
+    
+    logger.info(f"Returning job {job_id} status: {job['status']} (elapsed: {elapsed}s)")
     
     return jsonify({
         'id': job_id,
@@ -95,7 +111,10 @@ def get_job(job_id):
 @app.route('/api/v2/jobs/<int:job_id>/stdout/', methods=['GET'])
 def get_job_stdout(job_id):
     """Get job stdout output."""
+    logger.info(f"Received stdout request for job {job_id}")
+    
     if job_id not in _jobs:
+        logger.warning(f"Job {job_id} not found for stdout request")
         return jsonify({'error': 'Job not found'}), 404
     
     job = _jobs[job_id]

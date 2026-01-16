@@ -1,0 +1,62 @@
+---
+- name: Gather PLC Metrics for Comparison
+  hosts: plc_devices
+  gather_facts: false
+  vars:
+    monitored_tags: "{{ lookup('env', 'MONITORED_TAGS', default='Light_Status,Motor_Speed,Motor_Direction').split(',') }}"
+    # Thresholds (should match config.yaml)
+    tag_thresholds:
+      - name: "Light_Status"
+        condition: "equals"
+        failure_value: false
+        nominal: true
+      - name: "Motor_Speed"
+        condition: "outside_range"
+        low: 1500
+        high: 2000
+        nominal: 1750
+      - name: "Motor_Direction"
+        condition: "not_equals"
+        nominal: 1
+  
+  tasks:
+    - name: Read all monitored tags
+      community.cip.cip_read:
+        host: "{{ plc_host }}"
+        tags: "{{ monitored_tags }}"
+      register: current_values
+      ignore_errors: yes
+
+    - name: Compare against nominal values and detect violations
+      ansible.builtin.set_fact:
+        violations: "{{ violations | default([]) + [item] }}"
+      loop: "{{ tag_thresholds }}"
+      when: >
+        (item.condition == 'outside_range' and 
+         current_values.tags[item.name] is defined and
+         (current_values.tags[item.name] < item.low or 
+          current_values.tags[item.name] > item.high)) or
+        (item.condition == 'equals' and 
+         current_values.tags[item.name] is defined and
+         current_values.tags[item.name] == item.failure_value) or
+        (item.condition == 'not_equals' and 
+         current_values.tags[item.name] is defined and
+         current_values.tags[item.name] != item.nominal)
+
+    - name: Report violations
+      ansible.builtin.debug:
+        msg: "Threshold violations detected: {{ violations | default([]) }}"
+      when: violations is defined and violations | length > 0
+
+    - name: Report no violations
+      ansible.builtin.debug:
+        msg: "No threshold violations detected"
+      when: violations is not defined or violations | length == 0
+
+    - name: Return metrics summary
+      ansible.builtin.set_fact:
+        metrics_summary:
+          timestamp: "{{ ansible_date_time.iso8601 }}"
+          tag_values: "{{ current_values.tags | default({}) }}"
+          violations: "{{ violations | default([]) }}"
+          violation_count: "{{ violations | default([]) | length }}"

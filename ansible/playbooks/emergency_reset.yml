@@ -1,0 +1,45 @@
+---
+- name: Emergency Reset - Reset PLC state to nominal values
+  hosts: plc_devices
+  gather_facts: false
+  vars:
+    middleware_callback_url: "{{ lookup('env', 'MIDDLEWARE_URL', default='') }}"
+    # Nominal values (should match config.yaml)
+    nominal_values:
+      Light_Status: true
+      Motor_Speed: 1750
+      Motor_Direction: 1
+      Motor_Run: true
+  
+  tasks:
+    - name: Log remediation start
+      ansible.builtin.debug:
+        msg: "Initiating emergency reset for {{ inventory_hostname }}"
+
+    - name: Reset all monitored tags to nominal values
+      community.cip.cip_write:
+        host: "{{ plc_host }}"
+        tags: "{{ nominal_values | dict2items | map(attribute='key') | map('community.general.dict', name=item, value=nominal_values[item]) | list }}"
+      register: reset_result
+      ignore_errors: yes
+
+    - name: Verify reset values
+      community.cip.cip_read:
+        host: "{{ plc_host }}"
+        tags: "{{ nominal_values.keys() | list }}"
+      register: verify_result
+      retries: 3
+      delay: 2
+      ignore_errors: yes
+
+    - name: Callback to middleware with status
+      ansible.builtin.uri:
+        url: "{{ middleware_callback_url }}/api/v1/remediate/callback"
+        method: POST
+        body_format: json
+        body:
+          action: "emergency_reset"
+          status: "{{ 'success' if reset_result is succeeded else 'failed' }}"
+          timestamp: "{{ ansible_date_time.iso8601 }}"
+          host: "{{ inventory_hostname }}"
+      when: middleware_callback_url != ""

@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PLC Self-Healing Middleware Dashboard</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+        
+        .header {
+            background: #2c3e50;
+            color: white;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 1.5rem;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .card h2 {
+            font-size: 1.2rem;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 0.5rem;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-connected {
+            background: #27ae60;
+            box-shadow: 0 0 8px #27ae60;
+        }
+        
+        .status-disconnected {
+            background: #e74c3c;
+            box-shadow: 0 0 8px #e74c3c;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        table th, table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        
+        table th {
+            background: #f8f9fa;
+            font-weight: 600;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        
+        .badge-success {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .badge-warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .badge-error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary {
+            background: #3498db;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #2980b9;
+        }
+        
+        .btn-danger {
+            background: #e74c3c;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #c0392b;
+        }
+        
+        .btn-warning {
+            background: #f39c12;
+            color: white;
+        }
+        
+        .btn-warning:hover {
+            background: #e67e22;
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+        
+        .event-log {
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+        }
+        
+        .event-item {
+            padding: 0.5rem;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .event-item:last-child {
+            border-bottom: none;
+        }
+        
+        .event-timestamp {
+            color: #666;
+            margin-right: 0.5rem;
+        }
+        
+        .event-type {
+            font-weight: 600;
+            margin-right: 0.5rem;
+        }
+        
+        .event-data {
+            color: #555;
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin-top: 1rem;
+        }
+        
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+        
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+        
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        
+        input:checked + .slider {
+            background-color: #3498db;
+        }
+        
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+        
+        .full-width {
+            grid-column: 1 / -1;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>PLC Self-Healing Middleware Dashboard</h1>
+    </div>
+    
+    <div class="container">
+        <!-- Status Panel -->
+        <div class="grid">
+            <div class="card">
+                <h2>Connection Status</h2>
+                <div id="connection-status">
+                    <span class="status-indicator status-disconnected"></span>
+                    <span>Disconnected</span>
+                </div>
+                <div style="margin-top: 1rem;">
+                    <strong>Last Read:</strong> <span id="last-read">-</span><br>
+                    <strong>Total Reads:</strong> <span id="total-reads">0</span><br>
+                    <strong>Total Errors:</strong> <span id="total-errors">0</span>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>Tag Values</h2>
+                <table id="tag-values-table">
+                    <thead>
+                        <tr>
+                            <th>Tag</th>
+                            <th>Value</th>
+                            <th>Nominal</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tag-values-body">
+                        <tr><td colspan="4" class="loading">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="card">
+                <h2>Active Violations</h2>
+                <div id="violations-list">
+                    <div class="loading">Loading...</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Metrics Charts -->
+        <div class="card full-width">
+            <h2>Metrics Charts</h2>
+            <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));">
+                <div>
+                    <h3>Motor Speed</h3>
+                    <div class="chart-container">
+                        <canvas id="motor-speed-chart"></canvas>
+                    </div>
+                </div>
+                <div>
+                    <h3>Light Status</h3>
+                    <div class="chart-container">
+                        <canvas id="light-status-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Remediation Controls -->
+        <div class="card">
+            <h2>Remediation Controls</h2>
+            <div class="btn-group">
+                <button class="btn btn-danger" onclick="triggerRemediation('stop')">Emergency Stop</button>
+                <button class="btn btn-warning" onclick="triggerRemediation('reset')">Emergency Reset</button>
+                <button class="btn btn-primary" onclick="triggerRemediation('restart')">Emergency Restart</button>
+            </div>
+            <div id="remediation-status" style="margin-top: 1rem;"></div>
+        </div>
+        
+        <!-- Event Log -->
+        <div class="card full-width">
+            <h2>Event Log</h2>
+            <div class="event-log" id="event-log">
+                <div class="loading">Waiting for events...</div>
+            </div>
+        </div>
+        
+        <!-- Chaos Controls -->
+        <div class="card">
+            <h2>Chaos Engineering</h2>
+            <div style="margin-bottom: 1rem;">
+                <label class="switch">
+                    <input type="checkbox" id="chaos-enabled" onchange="toggleChaos()">
+                    <span class="slider"></span>
+                </label>
+                <span style="margin-left: 1rem;">Enable Chaos Injection</span>
+            </div>
+            <div style="margin-bottom: 1rem;">
+                <label>Injection Rate: <span id="injection-rate-value">5%</span></label><br>
+                <input type="range" id="injection-rate" min="0" max="100" value="5" 
+                       oninput="updateInjectionRate(this.value)" style="width: 100%; margin-top: 0.5rem;">
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-warning" onclick="injectChaos('network_timeout')">Inject Timeout</button>
+                <button class="btn btn-warning" onclick="injectChaos('connection_loss')">Inject Connection Loss</button>
+            </div>
+        </div>
+        
+        <!-- AAP Job Status -->
+        <div class="card">
+            <h2>AAP Job Status</h2>
+            <table id="aap-jobs-table">
+                <thead>
+                    <tr>
+                        <th>Job ID</th>
+                        <th>Action</th>
+                        <th>Status</th>
+                        <th>Time</th>
+                    </tr>
+                </thead>
+                <tbody id="aap-jobs-body">
+                    <tr><td colspan="4" class="loading">No jobs yet</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <script>
+        // Socket.IO connection
+        const socket = io();
+        
+        // Chart instances
+        let motorSpeedChart = null;
+        let lightStatusChart = null;
+        
+        // Data storage
+        let tagConfig = {};
+        let currentValues = {};
+        let chartData = {
+            motor_speed: { labels: [], values: [] },
+            light: { labels: [], values: [] }
+        };
+        
+        // Initialize charts
+        function initCharts() {
+            const motorCtx = document.getElementById('motor-speed-chart').getContext('2d');
+            motorSpeedChart = new Chart(motorCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Motor Speed',
+                        data: [],
+                        borderColor: 'rgb(52, 152, 219)',
+                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: false }
+                    }
+                }
+            });
+            
+            const lightCtx = document.getElementById('light-status-chart').getContext('2d');
+            lightStatusChart = new Chart(lightCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Light Status',
+                        data: [],
+                        borderColor: 'rgb(46, 204, 113)',
+                        backgroundColor: 'rgba(46, 204, 113, 0.1)',
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { 
+                            beginAtZero: true,
+                            max: 1,
+                            ticks: { stepSize: 1 }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Socket.IO event handlers
+        socket.on('connect', () => {
+            console.log('Connected to server');
+            console.log('Calling loadInitialData()...');
+            loadInitialData().catch(err => {
+                console.error('Error in loadInitialData:', err);
+            });
+        });
+        
+        socket.on('disconnect', () => {
+            console.log('Disconnected from server');
+        });
+        
+        socket.on('connect_error', (error) => {
+            console.error('Socket.IO connection error:', error);
+        });
+        
+        socket.on('tag_read', (data) => {
+            updateTagValue(data.tag_name, data.value, data.success);
+            if (data.success) {
+                updateChart(data.tag_name, data.value);
+            }
+        });
+        
+        socket.on('threshold_violation', (data) => {
+            addEvent('threshold_violation', data);
+            updateViolations();
+        });
+        
+        socket.on('connection_lost', (data) => {
+            updateConnectionStatus(false);
+            addEvent('connection_lost', data);
+        });
+        
+        socket.on('connection_restored', (data) => {
+            updateConnectionStatus(true);
+            addEvent('connection_restored', data);
+        });
+        
+        socket.on('remediation_triggered', (data) => {
+            addEvent('remediation_triggered', data);
+            updateAAPJobs();
+        });
+        
+        socket.on('chaos_injection', (data) => {
+            addEvent('chaos_injection', data);
+        });
+        
+        // API functions
+        async function loadInitialData() {
+            console.log('loadInitialData() started');
+            try {
+                // Load status
+                console.log('Fetching /api/v1/status...');
+                const statusController = new AbortController();
+                const statusTimeout = setTimeout(() => {
+                    console.error('Status API request timed out after 5 seconds');
+                    statusController.abort();
+                }, 5000); // 5 second timeout
+                const statusRes = await fetch('/api/v1/status', { 
+                    signal: statusController.signal 
+                }).finally(() => clearTimeout(statusTimeout));
+                console.log('Status response status:', statusRes.status, statusRes.statusText);
+                
+                if (!statusRes.ok) {
+                    console.error('Status API returned non-OK status:', statusRes.status, statusRes.statusText);
+                    const errorText = await statusRes.text();
+                    console.error('Error response body:', errorText);
+                    return;
+                }
+                
+                const statusText = await statusRes.text();
+                console.log('Status API raw response:', statusText);
+                
+                if (!statusText || statusText.trim().length === 0) {
+                    console.error('Status API returned empty response body');
+                    return;
+                }
+                
+                let statusData;
+                try {
+                    statusData = JSON.parse(statusText);
+                } catch (e) {
+                    console.error('Failed to parse status API response as JSON:', e, 'Response text:', statusText);
+                    return;
+                }
+                
+                console.log('Status API parsed response:', statusData);
+                if (statusData.success && statusData.data) {
+                    console.log('Updating connection status:', statusData.data.connected);
+                    console.log('Tag values received:', statusData.data.tag_values);
+                    updateConnectionStatus(statusData.data.connected);
+                    if (statusData.data.connection_stats) {
+                        updateConnectionStats(statusData.data.connection_stats, true); // Force update on initial load
+                    }
+                    if (statusData.data.tag_values) {
+                        updateTagValues(statusData.data.tag_values);
+                    }
+                } else {
+                    console.error('Status API returned error:', statusData.error || 'Unknown error', 'Full response:', statusData);
+                }
+                
+                // Load violations
+                console.log('Fetching violations...');
+                await updateViolations();
+                
+                // Load chaos status
+                console.log('Fetching chaos status...');
+                const chaosRes = await fetch('/api/v1/chaos/status');
+                if (chaosRes.ok) {
+                    const chaosData = await chaosRes.json();
+                    if (chaosData.success) {
+                        document.getElementById('chaos-enabled').checked = chaosData.data.enabled;
+                        document.getElementById('injection-rate').value = chaosData.data.failure_injection_rate * 100;
+                        updateInjectionRate(chaosData.data.failure_injection_rate * 100);
+                    }
+                }
+                
+                // Load AAP jobs
+                console.log('Loading AAP jobs...');
+                updateAAPJobs();
+                
+                console.log('loadInitialData() completed');
+            } catch (error) {
+                console.error('Error loading initial data:', error);
+                console.error('Error stack:', error.stack);
+            }
+        }
+        
+        function updateConnectionStatus(connected) {
+            console.log('updateConnectionStatus called with:', connected);
+            const statusEl = document.getElementById('connection-status');
+            if (!statusEl) {
+                console.error('connection-status element not found!');
+                return;
+            }
+            const indicator = statusEl.querySelector('.status-indicator');
+            const text = statusEl.querySelector('span:last-child');
+            
+            if (!indicator || !text) {
+                console.error('Connection status indicator elements not found!');
+                return;
+            }
+            
+            if (connected) {
+                indicator.className = 'status-indicator status-connected';
+                text.textContent = 'Connected';
+            } else {
+                indicator.className = 'status-indicator status-disconnected';
+                text.textContent = 'Disconnected';
+            }
+            console.log('Connection status updated to:', connected ? 'Connected' : 'Disconnected');
+        }
+        
+        function updateConnectionStats(stats, forceUpdate = false) {
+            console.log('updateConnectionStats called with:', stats, 'forceUpdate:', forceUpdate);
+            if (!stats) {
+                console.error('updateConnectionStats: stats is null or undefined');
+                return;
+            }
+            const lastReadEl = document.getElementById('last-read');
+            const totalReadsEl = document.getElementById('total-reads');
+            const totalErrorsEl = document.getElementById('total-errors');
+            
+            // Get current displayed values to avoid overwriting with worse data
+            let currentReads = 0;
+            let currentLastRead = null;
+            if (totalReadsEl && totalReadsEl.textContent && totalReadsEl.textContent !== '0' && totalReadsEl.textContent !== '-') {
+                currentReads = parseInt(totalReadsEl.textContent) || 0;
+            }
+            if (lastReadEl && lastReadEl.textContent && lastReadEl.textContent !== '-') {
+                try {
+                    currentLastRead = new Date(lastReadEl.textContent);
+                } catch (e) {
+                    currentLastRead = null;
+                }
+            }
+            
+            // Only update if new data is valid and (forceUpdate or better than current)
+            const newReads = stats.total_reads !== undefined ? stats.total_reads : 0;
+            const newLastRead = stats.last_successful_read ? new Date(stats.last_successful_read) : null;
+            
+            const shouldUpdateReads = forceUpdate || newReads >= currentReads;
+            const shouldUpdateLastRead = forceUpdate || !currentLastRead || (newLastRead && newLastRead > currentLastRead);
+            
+            if (lastReadEl) {
+                if (shouldUpdateLastRead && stats.last_successful_read) {
+                    lastReadEl.textContent = new Date(stats.last_successful_read).toLocaleString();
+                } else if (!currentLastRead && stats.last_successful_read) {
+                    // Only set if we don't have a current value
+                    lastReadEl.textContent = new Date(stats.last_successful_read).toLocaleString();
+                } else if (!stats.last_successful_read && lastReadEl.textContent === '-') {
+                    // Keep '-' if no data
+                    lastReadEl.textContent = '-';
+                }
+            }
+            if (totalReadsEl) {
+                if (shouldUpdateReads) {
+                    totalReadsEl.textContent = newReads;
+                } else if (totalReadsEl.textContent === '0' || totalReadsEl.textContent === '') {
+                    // Only update if currently empty/zero
+                    totalReadsEl.textContent = newReads;
+                }
+            }
+            if (totalErrorsEl) {
+                totalErrorsEl.textContent = stats.total_errors !== undefined ? stats.total_errors : 0;
+            }
+        }
+        
+        function updateTagValues(tagValues) {
+            console.log('updateTagValues called with:', tagValues);
+            const tbody = document.getElementById('tag-values-body');
+            if (!tbody) {
+                console.error('tag-values-body element not found!');
+                return;
+            }
+            tbody.innerHTML = '';
+            
+            if (!tagValues || Object.keys(tagValues).length === 0) {
+                console.warn('No tag values to display');
+                return;
+            }
+            
+            for (const [tagName, result] of Object.entries(tagValues)) {
+                console.log(`Processing tag ${tagName}:`, result);
+                const row = document.createElement('tr');
+                const nominal = tagConfig[tagName]?.nominal || '-';
+                const status = result.success ? 'OK' : 'ERROR';
+                const badgeClass = result.success ? 'badge-success' : 'badge-error';
+                
+                row.innerHTML = `
+                    <td>${tagName}</td>
+                    <td>${result.value !== null ? result.value : 'N/A'}</td>
+                    <td>${nominal}</td>
+                    <td><span class="badge ${badgeClass}">${status}</span></td>
+                `;
+                tbody.appendChild(row);
+            }
+            console.log('Tag values table updated');
+        }
+        
+        function updateTagValue(tagName, value, success) {
+            currentValues[tagName] = { value, success };
+            updateTagValues(currentValues);
+        }
+        
+        function updateChart(tagName, value) {
+            const now = new Date().toLocaleTimeString();
+            
+            if (tagName.includes('speed') || tagName.includes('Speed')) {
+                chartData.motor_speed.labels.push(now);
+                chartData.motor_speed.values.push(value);
+                
+                // Keep only last 50 points
+                if (chartData.motor_speed.labels.length > 50) {
+                    chartData.motor_speed.labels.shift();
+                    chartData.motor_speed.values.shift();
+                }
+                
+                motorSpeedChart.data.labels = chartData.motor_speed.labels;
+                motorSpeedChart.data.datasets[0].data = chartData.motor_speed.values;
+                motorSpeedChart.update('none');
+            } else if (tagName.includes('light') || tagName.includes('Light')) {
+                chartData.light.labels.push(now);
+                chartData.light.values.push(value ? 1 : 0);
+                
+                if (chartData.light.labels.length > 50) {
+                    chartData.light.labels.shift();
+                    chartData.light.values.shift();
+                }
+                
+                lightStatusChart.data.labels = chartData.light.labels;
+                lightStatusChart.data.datasets[0].data = chartData.light.values;
+                lightStatusChart.update('none');
+            }
+        }
+        
+        async function updateViolations() {
+            try {
+                console.log('Fetching /api/v1/events/violations?active=true...');
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+                const res = await fetch('/api/v1/events/violations?active=true', {
+                    signal: controller.signal
+                }).finally(() => clearTimeout(timeout));
+                console.log('Violations response status:', res.status, res.statusText);
+                
+                if (!res.ok) {
+                    console.error('Violations API returned non-OK status:', res.status, res.statusText);
+                    return;
+                }
+                
+                const data = await res.json();
+                console.log('Violations API response:', data);
+                
+                const listEl = document.getElementById('violations-list');
+                if (!listEl) {
+                    console.error('violations-list element not found!');
+                    return;
+                }
+                
+                if (data.success && data.data.violations.length > 0) {
+                    listEl.innerHTML = data.data.violations.map(v => `
+                        <div style="padding: 0.5rem; margin-bottom: 0.5rem; background: #fff3cd; border-left: 4px solid #f39c12; border-radius: 4px;">
+                            <strong>${v.tag_name}</strong>: ${v.actual_value} (expected: ${v.expected_value})<br>
+                            <small>${new Date(v.timestamp).toLocaleString()}</small>
+                        </div>
+                    `).join('');
+                } else {
+                    listEl.innerHTML = '<div style="color: #666;">No active violations</div>';
+                }
+            } catch (error) {
+                console.error('Error updating violations:', error);
+                console.error('Error stack:', error.stack);
+            }
+        }
+        
+        function addEvent(eventType, data) {
+            const logEl = document.getElementById('event-log');
+            if (logEl.querySelector('.loading')) {
+                logEl.innerHTML = '';
+            }
+            
+            const eventItem = document.createElement('div');
+            eventItem.className = 'event-item';
+            eventItem.innerHTML = `
+                <span class="event-timestamp">${new Date().toLocaleTimeString()}</span>
+                <span class="event-type">${eventType}</span>
+                <span class="event-data">${JSON.stringify(data)}</span>
+            `;
+            
+            logEl.insertBefore(eventItem, logEl.firstChild);
+            
+            // Keep only last 100 events
+            while (logEl.children.length > 100) {
+                logEl.removeChild(logEl.lastChild);
+            }
+        }
+        
+        async function triggerRemediation(action) {
+            if (!confirm(`Are you sure you want to trigger ${action}?`)) {
+                return;
+            }
+            
+            try {
+                const res = await fetch(`/api/v1/remediate/${action}`, { method: 'POST' });
+                const data = await res.json();
+                
+                const statusEl = document.getElementById('remediation-status');
+                if (data.success) {
+                    statusEl.innerHTML = `<span class="badge badge-success">Remediation triggered: ${data.data.job_id}</span>`;
+                    updateAAPJobs();
+                } else {
+                    statusEl.innerHTML = `<span class="badge badge-error">Error: ${data.error}</span>`;
+                }
+            } catch (error) {
+                console.error('Error triggering remediation:', error);
+            }
+        }
+        
+        function toggleChaos() {
+            const enabled = document.getElementById('chaos-enabled').checked;
+            fetch(`/api/v1/chaos/${enabled ? 'enable' : 'disable'}`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    console.log('Chaos toggled:', data);
+                });
+        }
+        
+        function updateInjectionRate(value) {
+            document.getElementById('injection-rate-value').textContent = value + '%';
+            // Note: This would need a backend endpoint to update the rate dynamically
+        }
+        
+        async function injectChaos(failureType) {
+            try {
+                const res = await fetch('/api/v1/chaos/inject', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ failure_type: failureType })
+                });
+                const data = await res.json();
+                console.log('Chaos injection result:', data);
+            } catch (error) {
+                console.error('Error injecting chaos:', error);
+            }
+        }
+        
+        async function updateAAPJobs() {
+            try {
+                const res = await fetch('/api/v1/remediate/status');
+                const data = await res.json();
+                
+                const tbody = document.getElementById('aap-jobs-body');
+                if (data.success && data.data.jobs && data.data.jobs.length > 0) {
+                    tbody.innerHTML = data.data.jobs.map(job => `
+                        <tr>
+                            <td>${job.job_id}</td>
+                            <td>${job.action_type}</td>
+                            <td><span class="badge badge-${job.status === 'successful' ? 'success' : job.status === 'failed' ? 'error' : 'warning'}">${job.status}</span></td>
+                            <td>${new Date(job.start_time).toLocaleString()}</td>
+                        </tr>
+                    `).join('');
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="4" class="loading">No jobs yet</td></tr>';
+                }
+            } catch (error) {
+                console.error('Error updating AAP jobs:', error);
+            }
+        }
+        
+        // Initialize on page load
+        initCharts();
+        
+        // Function to update connection stats
+        async function updateConnectionStatsPeriodic() {
+            try {
+                const res = await fetch('/api/v1/status');
+                if (res.ok) {
+                    const data = await res.json();
+                    console.log('Periodic status update:', data);
+                    if (data.success && data.data) {
+                        updateConnectionStatus(data.data.connected);
+                        // Only update stats if connection_stats exists and has valid data
+                        if (data.data.connection_stats) {
+                            console.log('Updating connection stats from periodic update:', data.data.connection_stats);
+                            updateConnectionStats(data.data.connection_stats, false); // Don't force, use smart update
+                        } else {
+                            console.warn('No connection_stats in status response');
+                        }
+                    } else {
+                        console.warn('Status response not successful or missing data:', data);
+                    }
+                } else {
+                    console.error('Status API returned non-OK status:', res.status, res.statusText);
+                }
+            } catch (error) {
+                console.error('Error updating connection stats:', error);
+            }
+        }
+        
+        // Poll for updates
+        setInterval(() => {
+            updateViolations();
+            updateAAPJobs();
+            updateConnectionStatsPeriodic();
+        }, 5000);
+    </script>
+</body>
+</html>

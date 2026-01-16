@@ -1,0 +1,56 @@
+---
+- name: Poll Middleware Health and Trigger Remediation
+  hosts: localhost
+  gather_facts: false
+  vars:
+    middleware_url: "{{ lookup('env', 'MIDDLEWARE_URL', default='http://localhost:5000') }}"
+  
+  tasks:
+    - name: Get middleware status
+      ansible.builtin.uri:
+        url: "{{ middleware_url }}/api/v1/status"
+        method: GET
+        return_content: true
+      register: status_response
+      ignore_errors: yes
+
+    - name: Check middleware health
+      ansible.builtin.assert:
+        that:
+          - status_response.status == 200
+          - status_response.json.success == true
+        fail_msg: "Middleware is not healthy"
+        success_msg: "Middleware is healthy"
+
+    - name: Check for active violations
+      ansible.builtin.uri:
+        url: "{{ middleware_url }}/api/v1/events/violations?active=true"
+        method: GET
+        return_content: true
+      register: violations_response
+      ignore_errors: yes
+      when: status_response.status == 200
+
+    - name: Display violations
+      ansible.builtin.debug:
+        msg: "Active violations: {{ violations_response.json.data.violations | default([]) }}"
+      when: violations_response.status == 200
+
+    - name: Trigger remediation if violations exist and auto-remediate enabled
+      ansible.builtin.uri:
+        url: "{{ middleware_url }}/api/v1/remediate/{{ item.recommended_action | default('reset') }}"
+        method: POST
+        return_content: true
+      loop: "{{ violations_response.json.data.violations | default([]) }}"
+      when: 
+        - violations_response.status == 200
+        - violations_response.json.data.violations | length > 0
+        - item.auto_remediate | default(false) | bool
+      register: remediation_response
+      ignore_errors: yes
+
+    - name: Report remediation results
+      ansible.builtin.debug:
+        msg: "Remediation triggered: {{ item.json | default({}) }}"
+      loop: "{{ remediation_response.results | default([]) }}"
+      when: remediation_response is defined

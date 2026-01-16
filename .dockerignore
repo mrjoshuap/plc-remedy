@@ -1,0 +1,30 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+*.md
+!README.md
+
+# Tests
+tests/
+.pytest_cache/
+
+# Development files
+.vscode/
+.idea/
+*.swp
+
+# Virtual environments
+venv/
+env/
+
+# Logs
+*.log
+
+# Configuration (will be mounted)
+config/config.yaml
+
+# Build artifacts
+__pycache__/
+*.pyc

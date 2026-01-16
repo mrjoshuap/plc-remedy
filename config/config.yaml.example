@@ -1,0 +1,68 @@
+# PLC Self-Healing Middleware Configuration
+# Copy this file to config.yaml and customize for your environment
+
+plc:
+  ip_address: "192.168.1.100"  # PLC IP address
+  slot: 0                       # PLC slot number (typically 0)
+  timeout: 5.0                  # Connection timeout in seconds
+  poll_interval_ms: 1000        # Polling interval in milliseconds
+  mock_mode: false              # Set to true when using mock PLC to gracefully handle unsupported CIP services
+
+tags:
+  # Light status tag - boolean
+  light:
+    name: "Light_Status"         # PLC tag name
+    type: "bool"                 # Data type: bool, int, float
+    nominal: true                # Expected nominal value
+    failure_condition: "equals"  # Failure condition type
+    failure_value: false         # Value that indicates failure
+
+  # Motor speed tag - integer with range
+  motor_speed:
+    name: "Motor_Speed"
+    type: "int"
+    nominal: 1750                # Nominal RPM
+    failure_condition: "outside_range"  # Failure if outside range
+    failure_threshold_low: 1500  # Minimum acceptable value
+    failure_threshold_high: 2000  # Maximum acceptable value
+
+  # Motor direction tag - integer
+  motor_direction:
+    name: "Motor_Direction"
+    type: "int"                  # 0=stopped, 1=forward, 2=reverse
+    nominal: 1                   # Expected direction (forward)
+    failure_condition: "not_equals"  # Failure if not equal to nominal
+    failure_value: 1             # Not used for not_equals, but kept for consistency
+
+aap:
+  enabled: true                  # Enable AAP integration
+  mock_mode: true                # Use mock AAP responses (set to false for real AAP)
+  base_url: "https://aap.example.com"  # AAP base URL (only used if mock_mode=false)
+  verify_ssl: true               # Verify SSL certificates
+  token: "${AAP_TOKEN}"           # AAP authentication token (from environment variable)
+  job_templates:
+    emergency_stop: 42           # Job template ID for emergency stop
+    emergency_reset: 43          # Job template ID for emergency reset
+    emergency_restart: 44        # Job template ID for emergency restart
+    gather_metrics: 45           # Job template ID for metrics gathering
+
+remediation:
+  auto_remediate: false          # Automatically trigger remediation on violations (manual by default)
+  cooldown_seconds: 30           # Minimum time between remediations (seconds)
+  max_retries: 3                 # Maximum retry attempts for failed remediations
+
+chaos:
+  enabled: false                 # Enable chaos engineering (failure injection)
+  failure_injection_rate: 0.05    # Probability of failure injection per poll cycle (5%)
+  failure_types:
+    - value_anomaly              # Inject out-of-range values
+    - network_timeout            # Simulate network timeouts
+    - connection_loss            # Simulate connection loss
+    - service_crash              # Simulate service crash (use with caution!)
+  network_timeout_ms: 5000       # Timeout duration for network_timeout injection
+  anomaly_duration_seconds: 10   # Duration for connection_loss injection
+
+dashboard:
+  refresh_interval_ms: 1000      # Dashboard refresh interval (milliseconds)
+  history_retention_hours: 24    # How long to retain historical data (hours)
+  chart_data_points: 100        # Number of data points to show in charts

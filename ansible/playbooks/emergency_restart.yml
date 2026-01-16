@@ -1,0 +1,47 @@
+---
+- name: Emergency Restart - Restart middleware service
+  hosts: localhost
+  gather_facts: false
+  vars:
+    middleware_callback_url: "{{ lookup('env', 'MIDDLEWARE_URL', default='') }}"
+    service_name: "{{ lookup('env', 'SERVICE_NAME', default='plc-remedy') }}"
+  
+  tasks:
+    - name: Log remediation start
+      ansible.builtin.debug:
+        msg: "Initiating emergency restart for middleware service"
+
+    - name: Check if service exists
+      ansible.builtin.systemd:
+        name: "{{ service_name }}"
+      register: service_status
+      ignore_errors: yes
+
+    - name: Restart middleware service
+      ansible.builtin.systemd:
+        name: "{{ service_name }}"
+        state: restarted
+      when: service_status.status is defined
+      register: restart_result
+      ignore_errors: yes
+
+    - name: Verify service is running
+      ansible.builtin.systemd:
+        name: "{{ service_name }}"
+        state: started
+      when: service_status.status is defined
+      register: verify_result
+      retries: 5
+      delay: 2
+      ignore_errors: yes
+
+    - name: Callback to middleware with status
+      ansible.builtin.uri:
+        url: "{{ middleware_callback_url }}/api/v1/remediate/callback"
+        method: POST
+        body_format: json
+        body:
+          action: "emergency_restart"
+          status: "{{ 'success' if (verify_result.status is defined and verify_result.status.ActiveState == 'active') else 'failed' }}"
+          timestamp: "{{ ansible_date_time.iso8601 }}"
+      when: middleware_callback_url != ""

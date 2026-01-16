@@ -1,0 +1,48 @@
+---
+- name: Emergency Stop - Halt all PLC operations
+  hosts: plc_devices
+  gather_facts: false
+  vars:
+    middleware_callback_url: "{{ lookup('env', 'MIDDLEWARE_URL', default='') }}"
+  
+  tasks:
+    - name: Log remediation start
+      ansible.builtin.debug:
+        msg: "Initiating emergency stop for {{ inventory_hostname }}"
+
+    - name: Stop motor via CIP
+      community.cip.cip_write:
+        host: "{{ plc_host }}"
+        tags:
+          - name: "Motor_Run"
+            value: false
+          - name: "Motor_Speed"
+            value: 0
+      register: stop_result
+      ignore_errors: yes
+
+    - name: Verify motor stopped
+      community.cip.cip_read:
+        host: "{{ plc_host }}"
+        tags:
+          - "Motor_Speed"
+          - "Motor_Run"
+      register: verify_result
+      until: >
+        verify_result.tags.Motor_Speed == 0 and
+        verify_result.tags.Motor_Run == false
+      retries: 5
+      delay: 2
+      ignore_errors: yes
+
+    - name: Callback to middleware with status
+      ansible.builtin.uri:
+        url: "{{ middleware_callback_url }}/api/v1/remediate/callback"
+        method: POST
+        body_format: json
+        body:
+          action: "emergency_stop"
+          status: "{{ 'success' if (verify_result.tags.Motor_Speed | default(999) == 0) else 'failed' }}"
+          timestamp: "{{ ansible_date_time.iso8601 }}"
+          host: "{{ inventory_hostname }}"
+      when: middleware_callback_url != ""

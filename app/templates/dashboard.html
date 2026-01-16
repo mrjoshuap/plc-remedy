@@ -256,27 +256,6 @@
     </div>
     
     <div class="container">
-        <!-- Chaos Controls -->
-        <div class="card">
-            <h2>Chaos Engineering</h2>
-            <div style="margin-bottom: 1rem;">
-                <label class="switch">
-                    <input type="checkbox" id="chaos-enabled" onchange="toggleChaos()">
-                    <span class="slider"></span>
-                </label>
-                <span style="margin-left: 1rem;">Enable Chaos Injection</span>
-            </div>
-            <div style="margin-bottom: 1rem;">
-                <label>Injection Rate: <span id="injection-rate-value">5%</span></label><br>
-                <input type="range" id="injection-rate" min="0" max="100" value="5" 
-                oninput="updateInjectionRate(this.value)" style="width: 100%; margin-top: 0.5rem;">
-            </div>
-            <div class="btn-group">
-                <button class="btn btn-warning" onclick="injectChaos('network_timeout')">Inject Timeout</button>
-                <button class="btn btn-warning" onclick="injectChaos('connection_loss')">Inject Connection Loss</button>
-            </div>
-        </div>
-        
         <!-- Status Panel -->
         <div class="grid">
             <div class="card">
@@ -314,6 +293,27 @@
                 <div id="violations-list">
                     <div class="loading">Loading...</div>
                 </div>
+            </div>
+        </div>
+        
+        <!-- Chaos Controls -->
+        <div class="card">
+            <h2>Chaos Engineering</h2>
+            <div style="margin-bottom: 1rem;">
+                <label class="switch">
+                    <input type="checkbox" id="chaos-enabled" onchange="toggleChaos()">
+                    <span class="slider"></span>
+                </label>
+                <span style="margin-left: 1rem;">Enable Chaos Injection</span>
+            </div>
+            <div style="margin-bottom: 1rem;">
+                <label>Injection Rate: <span id="injection-rate-value">5%</span></label><br>
+                <input type="range" id="injection-rate" min="0" max="100" value="5" 
+                oninput="updateInjectionRate(this.value)" style="width: 100%; margin-top: 0.5rem;">
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-warning" onclick="injectChaos('network_timeout')">Inject Timeout</button>
+                <button class="btn btn-warning" onclick="injectChaos('connection_loss')">Inject Connection Loss</button>
             </div>
         </div>
         

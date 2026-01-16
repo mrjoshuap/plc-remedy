@@ -318,80 +318,81 @@ class PLCClient:
         
         # Serialize read operations to prevent overwhelming the PLC
         # Acquire read lock to ensure only one read happens at a time
-        with self._read_lock:
-            # Check connection health before attempting read
-            if not self.check_connection_health():
-                logger.warning(f"Connection health check failed before reading tag '{tag_name}', attempting reconnect")
-                # Connection appears dead, try to reconnect
-                if not self.connect():
-                    error_msg = "Connection health check failed and reconnect attempt failed"
+        try:
+            with self._read_lock:
+                # Check connection health before attempting read
+                if not self.check_connection_health():
+                    logger.warning(f"Connection health check failed before reading tag '{tag_name}', attempting reconnect")
+                    # Connection appears dead, try to reconnect
+                    if not self.connect():
+                        error_msg = "Connection health check failed and reconnect attempt failed"
+                        with self._lock:
+                            self._stats.total_errors += 1
+                            self._stats.last_error = error_msg
+                        return TagResult(
+                            tag_name=tag_name,
+                            value=None,
+                            timestamp=timestamp,
+                            success=False,
+                            error=error_msg
+                        )
+                    # Re-check after reconnect
                     with self._lock:
-                        self._stats.total_errors += 1
-                        self._stats.last_error = error_msg
-                    return TagResult(
-                        tag_name=tag_name,
-                        value=None,
-                        timestamp=timestamp,
-                        success=False,
-                        error=error_msg
-                    )
-                # Re-check after reconnect
+                        driver = self._driver
+                    if driver is None:
+                        error_msg = "PLC driver not available after reconnect"
+                        with self._lock:
+                            self._stats.total_errors += 1
+                            self._stats.last_error = error_msg
+                        return TagResult(
+                            tag_name=tag_name,
+                            value=None,
+                            timestamp=timestamp,
+                            success=False,
+                            error=error_msg
+                        )
+                
+                # Perform read with explicit timeout awareness
+                # The LogixDriver should use self.config.timeout, but we'll catch timeout-related errors
+                read_start_time = time.time()
+                try:
+                    result = driver.read(tag_name)
+                    read_duration = time.time() - read_start_time
+                    if read_duration > 2.0:  # Log if read takes more than 2 seconds
+                        logger.warning(f"PLC read for '{tag_name}' took {read_duration:.2f} seconds (slow)")
+                except Exception as read_error:
+                    read_duration = time.time() - read_start_time
+                    logger.error(f"PLC read for '{tag_name}' failed after {read_duration:.2f} seconds: {read_error}")
+                    raise
+                
+                # Update statistics INSIDE the lock
                 with self._lock:
-                    driver = self._driver
-                if driver is None:
-                    error_msg = "PLC driver not available after reconnect"
-                    with self._lock:
+                    if result.error:
+                        error_msg = f"Tag read error: {result.error}"
+                        logger.warning(f"Failed to read tag '{tag_name}': {error_msg}")
                         self._stats.total_errors += 1
                         self._stats.last_error = error_msg
+                        return TagResult(
+                            tag_name=tag_name,
+                            value=None,
+                            timestamp=timestamp,
+                            success=False,
+                            error=error_msg
+                        )
+                    
+                    # Success
+                    self._stats.total_reads += 1
+                    self._stats.last_successful_read = timestamp
+                    logger.debug(f"Read tag '{tag_name}': {result.value}")
+                    
                     return TagResult(
                         tag_name=tag_name,
-                        value=None,
+                        value=result.value,
                         timestamp=timestamp,
-                        success=False,
-                        error=error_msg
+                        success=True,
+                        error=None
                     )
-            
-            # Perform read with explicit timeout awareness
-            # The LogixDriver should use self.config.timeout, but we'll catch timeout-related errors
-            read_start_time = time.time()
-            try:
-                result = driver.read(tag_name)
-                read_duration = time.time() - read_start_time
-                if read_duration > 2.0:  # Log if read takes more than 2 seconds
-                    logger.warning(f"PLC read for '{tag_name}' took {read_duration:.2f} seconds (slow)")
-            except Exception as read_error:
-                read_duration = time.time() - read_start_time
-                logger.error(f"PLC read for '{tag_name}' failed after {read_duration:.2f} seconds: {read_error}")
-                raise
-            
-            # Update statistics INSIDE the lock
-            with self._lock:
-                if result.error:
-                    error_msg = f"Tag read error: {result.error}"
-                    logger.warning(f"Failed to read tag '{tag_name}': {error_msg}")
-                    self._stats.total_errors += 1
-                    self._stats.last_error = error_msg
-                    return TagResult(
-                        tag_name=tag_name,
-                        value=None,
-                        timestamp=timestamp,
-                        success=False,
-                        error=error_msg
-                    )
-                
-                # Success
-                self._stats.total_reads += 1
-                self._stats.last_successful_read = timestamp
-                logger.debug(f"Read tag '{tag_name}': {result.value}")
-                
-                return TagResult(
-                    tag_name=tag_name,
-                    value=result.value,
-                    timestamp=timestamp,
-                    success=True,
-                    error=None
-                )
-                
+                    
         except (CommError, RequestError, BufferEmptyError) as e:
             error_msg = str(e)
             error_lower = error_msg.lower()

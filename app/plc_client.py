@@ -1,6 +1,7 @@
 """PLC communication client using pycomm3 for Allen-Bradley CIP protocol."""
 import logging
 import threading
+import time
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from pycomm3 import LogixDriver
@@ -27,6 +28,7 @@ class PLCClient:
         self._tags_config = tags_config or {}
         self._driver: Optional[LogixDriver] = None
         self._lock = threading.Lock()
+        self._read_lock = threading.Lock()  # Lock for serializing read operations
         self._stats = ConnectionStats(
             connected=False,
             connection_start_time=None
@@ -314,43 +316,53 @@ class PLCClient:
             # Get reference to driver (we'll use it outside the lock)
             driver = self._driver
         
-        # Perform network I/O OUTSIDE the lock to avoid blocking API requests
-        # Check connection health before attempting read
-        if not self.check_connection_health():
-            logger.warning(f"Connection health check failed before reading tag '{tag_name}', attempting reconnect")
-            # Connection appears dead, try to reconnect
-            if not self.connect():
-                error_msg = "Connection health check failed and reconnect attempt failed"
+        # Serialize read operations to prevent overwhelming the PLC
+        # Acquire read lock to ensure only one read happens at a time
+        with self._read_lock:
+            # Check connection health before attempting read
+            if not self.check_connection_health():
+                logger.warning(f"Connection health check failed before reading tag '{tag_name}', attempting reconnect")
+                # Connection appears dead, try to reconnect
+                if not self.connect():
+                    error_msg = "Connection health check failed and reconnect attempt failed"
+                    with self._lock:
+                        self._stats.total_errors += 1
+                        self._stats.last_error = error_msg
+                    return TagResult(
+                        tag_name=tag_name,
+                        value=None,
+                        timestamp=timestamp,
+                        success=False,
+                        error=error_msg
+                    )
+                # Re-check after reconnect
                 with self._lock:
-                    self._stats.total_errors += 1
-                    self._stats.last_error = error_msg
-                return TagResult(
-                    tag_name=tag_name,
-                    value=None,
-                    timestamp=timestamp,
-                    success=False,
-                    error=error_msg
-                )
-            # Re-check after reconnect
-            with self._lock:
-                driver = self._driver
-            if driver is None:
-                error_msg = "PLC driver not available after reconnect"
-                with self._lock:
-                    self._stats.total_errors += 1
-                    self._stats.last_error = error_msg
-                return TagResult(
-                    tag_name=tag_name,
-                    value=None,
-                    timestamp=timestamp,
-                    success=False,
-                    error=error_msg
-                )
-        
-        try:
+                    driver = self._driver
+                if driver is None:
+                    error_msg = "PLC driver not available after reconnect"
+                    with self._lock:
+                        self._stats.total_errors += 1
+                        self._stats.last_error = error_msg
+                    return TagResult(
+                        tag_name=tag_name,
+                        value=None,
+                        timestamp=timestamp,
+                        success=False,
+                        error=error_msg
+                    )
+            
             # Perform read with explicit timeout awareness
             # The LogixDriver should use self.config.timeout, but we'll catch timeout-related errors
-            result = driver.read(tag_name)
+            read_start_time = time.time()
+            try:
+                result = driver.read(tag_name)
+                read_duration = time.time() - read_start_time
+                if read_duration > 2.0:  # Log if read takes more than 2 seconds
+                    logger.warning(f"PLC read for '{tag_name}' took {read_duration:.2f} seconds (slow)")
+            except Exception as read_error:
+                read_duration = time.time() - read_start_time
+                logger.error(f"PLC read for '{tag_name}' failed after {read_duration:.2f} seconds: {read_error}")
+                raise
             
             # Update statistics INSIDE the lock
             with self._lock:
@@ -460,7 +472,9 @@ class PLCClient:
         """
         results = {}
         
-        # Read each tag individually to avoid Multiple Service Packets
+        # Read tags sequentially to avoid overwhelming the PLC
+        # The read_lock in read_tag() ensures only one read happens at a time
+        # This also avoids Multiple Service Packets, which some mock PLCs don't support properly
         for tag_name in tag_names:
             logger.debug(f"Reading tag: {tag_name}")
             result = self.read_tag(tag_name)

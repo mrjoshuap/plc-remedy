@@ -795,12 +795,49 @@
                 }
                 
                 if (data.success && data.data.violations.length > 0) {
-                    listEl.innerHTML = data.data.violations.map(v => `
+                    listEl.innerHTML = data.data.violations.map(v => {
+                        // Format expected value based on tag configuration (similar to nominal values)
+                        let expectedDisplay = v.expected_value;
+                        
+                        // Find the tag config for this violation
+                        let tagData = null;
+                        for (const [configKey, data] of Object.entries(tagConfig)) {
+                            if (data && data.name === v.tag_name) {
+                                tagData = data;
+                                break;
+                            }
+                        }
+                        // Fallback: try direct lookup
+                        if (!tagData && tagConfig[v.tag_name]) {
+                            tagData = tagConfig[v.tag_name];
+                        }
+                        
+                        // Format expected value based on failure condition and thresholds
+                        if (tagData) {
+                            const failureCondition = tagData.failure_condition;
+                            const thresholdLow = tagData.failure_threshold_low;
+                            const thresholdHigh = tagData.failure_threshold_high;
+                            
+                            if (failureCondition === 'outside_range' && thresholdLow != null && thresholdHigh != null) {
+                                // Display as range: "1500-2000"
+                                expectedDisplay = `${thresholdLow}-${thresholdHigh}`;
+                            } else if (failureCondition === 'below' && thresholdLow != null) {
+                                // Display as: "> 1500" (value must be above threshold)
+                                expectedDisplay = `> ${thresholdLow}`;
+                            } else if (failureCondition === 'above' && thresholdHigh != null) {
+                                // Display as: "< 2000" (value must be below threshold)
+                                expectedDisplay = `< ${thresholdHigh}`;
+                            }
+                            // Otherwise use the expected_value as-is
+                        }
+                        
+                        return `
                         <div style="padding: 0.5rem; margin-bottom: 0.5rem; background: #fff3cd; border-left: 4px solid #f39c12; border-radius: 4px;">
-                            <strong>${v.tag_name}</strong>: ${v.actual_value} (expected: ${v.expected_value})<br>
+                            <strong>${v.tag_name}</strong>: ${v.actual_value} (expected: ${expectedDisplay})<br>
                             <small>${new Date(v.timestamp).toLocaleString()}</small>
                         </div>
-                    `).join('');
+                        `;
+                    }).join('');
                 } else {
                     listEl.innerHTML = '<div style="color: #666;">No active violations</div>';
                 }

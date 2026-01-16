@@ -363,10 +363,23 @@ def get_remediation_status():
         
         return _api_response(True, job)
     else:
-        # Get all jobs
+        # Get all jobs - check AAP status for each job
+        jobs_list = []
+        for job in _remediation_jobs.values():
+            # Update status from AAP if available
+            if job.get('aap_job_id') and _aap_client:
+                try:
+                    aap_status = _aap_client.get_job_status(job['aap_job_id'])
+                    if aap_status.get('finished'):
+                        job['status'] = 'successful' if not aap_status.get('failed') else 'failed'
+                        job['end_time'] = datetime.now().isoformat()
+                except Exception as e:
+                    logger.warning(f"Error checking AAP job status for job {job.get('job_id')}: {e}")
+            jobs_list.append(job)
+        
         return _api_response(True, {
-            'jobs': list(_remediation_jobs.values()),
-            'count': len(_remediation_jobs)
+            'jobs': jobs_list,
+            'count': len(jobs_list)
         })
 
 

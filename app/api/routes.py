@@ -23,7 +23,7 @@ _remediation_jobs: Dict[str, Dict[str, Any]] = {}
 _last_remediation_time: Dict[str, datetime] = {}  # Per-tag remediation cooldown tracking
 _last_remediation_time_global: Optional[datetime] = None  # Global cooldown for general remediation (no tag)
 _last_job_status_check: Dict[str, datetime] = {}  # Track last time each job was checked (rate limiting)
-JOB_STATUS_CHECK_INTERVAL_SECONDS = 3  # Minimum time between checking the same job
+JOB_STATUS_CHECK_INTERVAL_SECONDS = 2  # Minimum time between checking the same job (reduced from 3 to allow more frequent checks)
 
 
 def init_api(monitor, aap_client, chaos_engine, config: AppConfig, socketio: SocketIO):
@@ -466,30 +466,65 @@ def get_remediation_status():
         # Limit how many jobs we check per request to prevent overload
         MAX_JOBS_TO_CHECK = 10
         jobs_to_check = []
-        jobs_skipped = 0
+        jobs_skipped_finished = 0
+        jobs_skipped_rate_limited = []
+        active_jobs = []
         
+        # First pass: collect active jobs and categorize them
         for job in _remediation_jobs.values():
             current_status = job.get('status')
             job_id = job.get('job_id', '')
             
-            # Only check jobs that are not finished and haven't been checked recently
-            if (job.get('aap_job_id') and _aap_client and 
-                current_status not in ['successful', 'failed'] and
-                len(jobs_to_check) < MAX_JOBS_TO_CHECK):
-                
-                # Check rate limiting
-                should_check = True
-                if job_id in _last_job_status_check:
-                    elapsed = (now - _last_job_status_check[job_id]).total_seconds()
-                    if elapsed < JOB_STATUS_CHECK_INTERVAL_SECONDS:
-                        should_check = False
-                        jobs_skipped += 1
-                
-                if should_check:
-                    jobs_to_check.append(job)
-            else:
-                if current_status in ['successful', 'failed']:
-                    jobs_skipped += 1
+            # Skip finished jobs entirely
+            if current_status in ['successful', 'failed']:
+                jobs_skipped_finished += 1
+                continue
+            
+            # Collect active jobs that can be checked
+            if job.get('aap_job_id') and _aap_client:
+                active_jobs.append(job)
+        
+        # Second pass: select jobs to check, ensuring at least one if there are active jobs
+        for job in active_jobs:
+            if len(jobs_to_check) >= MAX_JOBS_TO_CHECK:
+                break
+            
+            job_id = job.get('job_id', '')
+            
+            # Check rate limiting
+            should_check = True
+            if job_id in _last_job_status_check:
+                elapsed = (now - _last_job_status_check[job_id]).total_seconds()
+                if elapsed < JOB_STATUS_CHECK_INTERVAL_SECONDS:
+                    should_check = False
+                    jobs_skipped_rate_limited.append(job_id)
+            
+            if should_check:
+                jobs_to_check.append(job)
+        
+        # If no jobs were selected but there are active jobs, check the oldest unchecked job
+        # This ensures jobs don't get stuck
+        if len(jobs_to_check) == 0 and len(active_jobs) > 0:
+            # Find the job that was checked longest ago (or never checked)
+            oldest_job = None
+            oldest_check_time = None
+            
+            for job in active_jobs:
+                job_id = job.get('job_id', '')
+                if job_id not in _last_job_status_check:
+                    # Never checked - prioritize this one
+                    oldest_job = job
+                    break
+                else:
+                    check_time = _last_job_status_check[job_id]
+                    if oldest_check_time is None or check_time < oldest_check_time:
+                        oldest_check_time = check_time
+                        oldest_job = job
+            
+            if oldest_job:
+                jobs_to_check.append(oldest_job)
+                if oldest_job.get('job_id', '') in jobs_skipped_rate_limited:
+                    jobs_skipped_rate_limited.remove(oldest_job.get('job_id', ''))
         
         # Check status for selected jobs
         for job in jobs_to_check:
@@ -520,8 +555,10 @@ def get_remediation_status():
         for job in _remediation_jobs.values():
             jobs_list.append(job)
         
-        if jobs_skipped > 0 or len(jobs_to_check) < len([j for j in _remediation_jobs.values() if j.get('status') not in ['successful', 'failed']]):
-            logger.debug(f"Status check: checked {len(jobs_to_check)} jobs, skipped {jobs_skipped} (finished or rate-limited)")
+        total_active_jobs = len(active_jobs)
+        if len(jobs_to_check) > 0 or jobs_skipped_finished > 0 or len(jobs_skipped_rate_limited) > 0:
+            logger.debug(f"Status check: checked {len(jobs_to_check)}/{total_active_jobs} active jobs, "
+                        f"skipped {jobs_skipped_finished} finished, {len(jobs_skipped_rate_limited)} rate-limited")
         
         return _api_response(True, {
             'jobs': jobs_list,

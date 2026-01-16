@@ -82,31 +82,31 @@ tmux new-session -d -s "$SESSION_NAME" -x 120 -y 40 \
     "$PYTHON_CMD mock/cip_plc.py --ip 127.0.0.1 --port 44818 --mode normal"
 
 # Set pane title for pane 0 (Mock PLC)
-tmux select-pane -t "$SESSION_NAME:0" -T "Mock PLC"
+tmux select-pane -t "$SESSION_NAME:0.0" -T "Mock PLC"
 
 # Split window vertically to create second pane (Mock AAP)
-tmux split-window -v -t "$SESSION_NAME:0" \
+tmux split-window -v -t "$SESSION_NAME:0.0" \
     "$PYTHON_CMD mock/mock_aap.py"
 
 # Set pane title for pane 1 (Mock AAP)
-tmux select-pane -t "$SESSION_NAME:1" -T "Mock AAP"
+tmux select-pane -t "$SESSION_NAME:0.1" -T "Mock AAP"
 
 # Split the bottom pane (pane 1) vertically to create third pane (Main App)
-tmux split-window -v -t "$SESSION_NAME:1" \
+tmux split-window -v -t "$SESSION_NAME:0.1" \
     "$PYTHON_CMD run.py"
 
 # Set pane title for pane 2 (Main App)
-tmux select-pane -t "$SESSION_NAME:2" -T "Main Application"
+tmux select-pane -t "$SESSION_NAME:0.2" -T "Main Application"
 
 # Set layout to even-vertical to ensure all panes are equal size
-tmux select-layout -t "$SESSION_NAME" even-vertical
+tmux select-layout -t "$SESSION_NAME:0" even-vertical
 
 # Configure tmux to prevent detaching
 # Set detach-on-destroy to ensure processes stop when session ends
 tmux set-option -t "$SESSION_NAME" -g detach-on-destroy on
 
 # Select the first pane (top) for initial focus
-tmux select-pane -t "$SESSION_NAME:0"
+tmux select-pane -t "$SESSION_NAME:0.0"
 
 # Display instructions
 print_info "Test components started in tmux session '$SESSION_NAME'"

@@ -492,6 +492,10 @@ def get_config():
             'refresh_interval_ms': _config.dashboard.refresh_interval_ms,
             'history_retention_hours': _config.dashboard.history_retention_hours,
             'chart_data_points': _config.dashboard.chart_data_points
+        },
+        'logging': {
+            'level': _config.logging.level,
+            'format': _config.logging.format
         }
     }
     

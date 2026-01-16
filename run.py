@@ -19,7 +19,7 @@ from app.chaos import ChaosEngine
 from app.api import api, init_api
 from app.web import web
 
-# Configure logging
+# Configure basic logging first (will be reconfigured after config loads)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -107,6 +107,18 @@ def create_app():
         logger.info("Loading configuration...")
         config = load_config()
         logger.info(f"Configuration loaded: PLC at {config.plc.ip_address}")
+        
+        # Configure logging based on config
+        log_level = getattr(logging, config.logging.level.upper(), logging.INFO)
+        logging.basicConfig(
+            level=log_level,
+            format=config.logging.format,
+            handlers=[
+                logging.StreamHandler(sys.stdout)
+            ],
+            force=True  # Override previous configuration
+        )
+        logger.info(f"Logging configured: level={config.logging.level}")
         
         # Initialize PLC client
         logger.info("Initializing PLC client...")

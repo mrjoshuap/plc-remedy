@@ -294,6 +294,22 @@ aap:
     emergency_reset: 43
 ```
 
+#### Logging Configuration
+```yaml
+logging:
+  level: INFO  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"  # Optional: custom log format
+```
+
+**Valid log levels:**
+- `DEBUG`: Detailed diagnostic information (most verbose)
+- `INFO`: General informational messages (default)
+- `WARNING`: Warning messages for potential issues
+- `ERROR`: Error messages for failures
+- `CRITICAL`: Critical errors that may cause the application to stop
+
+The log level is case-insensitive. If the `logging` section is omitted, the default level is `INFO`.
+
 ## Mock PLC Simulator
 
 ### CIP-Compatible Mock PLC (Recommended)

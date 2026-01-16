@@ -54,3 +54,6 @@ Thumbs.db
 # Environment variables
 .env
 .env.local
+
+# Documents
+26MFG-0011.md

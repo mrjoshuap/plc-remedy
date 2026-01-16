@@ -185,15 +185,18 @@ python -c "import yaml; yaml.safe_load(open('config/config.yaml'))"
 
 ## Log Levels
 
-Increase logging verbosity for debugging:
+Increase logging verbosity for debugging by configuring the log level in `config/config.yaml`:
 
-```python
-# In run.py, change:
-logging.basicConfig(level=logging.DEBUG)  # Instead of INFO
+```yaml
+logging:
+  level: DEBUG  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
 ```
 
-Or set environment variable:
-```bash
-export LOG_LEVEL=DEBUG
-python run.py
-```
+**Valid log levels:**
+- `DEBUG`: Most verbose, shows all diagnostic information
+- `INFO`: General informational messages (default)
+- `WARNING`: Warning messages only
+- `ERROR`: Error messages only
+- `CRITICAL`: Critical errors only
+
+The log level is case-insensitive. After changing the log level in config.yaml, restart the application for the change to take effect.

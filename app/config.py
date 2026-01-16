@@ -69,6 +69,13 @@ class DashboardConfig:
 
 
 @dataclass
+class LoggingConfig:
+    """Logging configuration."""
+    level: str = "INFO"
+    format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+
+@dataclass
 class AppConfig:
     """Application configuration container."""
     plc: PLCConfig
@@ -77,6 +84,7 @@ class AppConfig:
     remediation: RemediationConfig
     chaos: ChaosConfig
     dashboard: DashboardConfig
+    logging: LoggingConfig
 
 
 class ConfigLoader:
@@ -293,6 +301,33 @@ class ConfigLoader:
             chart_data_points=int(dashboard_data.get('chart_data_points', 100))
         )
     
+    def _validate_logging_config(self, logging_data: Dict[str, Any]) -> LoggingConfig:
+        """Validate and create LoggingConfig.
+        
+        Args:
+            logging_data: Logging configuration dictionary
+            
+        Returns:
+            Validated LoggingConfig instance
+            
+        Raises:
+            ValueError: If log level is invalid
+        """
+        level = str(logging_data.get('level', 'INFO')).upper()
+        valid_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
+        
+        if level not in valid_levels:
+            raise ValueError(
+                f"Invalid log level '{level}'. Must be one of: {', '.join(valid_levels)}"
+            )
+        
+        log_format = str(logging_data.get('format', '%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        
+        return LoggingConfig(
+            level=level,
+            format=log_format
+        )
+    
     def load(self) -> AppConfig:
         """Load and validate configuration.
         
@@ -324,6 +359,7 @@ class ConfigLoader:
         remediation_config = self._validate_remediation_config(data.get('remediation', {}))
         chaos_config = self._validate_chaos_config(data.get('chaos', {}))
         dashboard_config = self._validate_dashboard_config(data.get('dashboard', {}))
+        logging_config = self._validate_logging_config(data.get('logging', {}))
         
         self._config = AppConfig(
             plc=plc_config,
@@ -331,7 +367,8 @@ class ConfigLoader:
             aap=aap_config,
             remediation=remediation_config,
             chaos=chaos_config,
-            dashboard=dashboard_config
+            dashboard=dashboard_config,
+            logging=logging_config
         )
         
         return self._config

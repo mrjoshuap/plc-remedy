@@ -244,26 +244,33 @@ def get_logs():
 @api.route('/remediate/stop', methods=['POST'])
 def remediate_stop():
     """Trigger emergency stop remediation."""
-    return _trigger_remediation('stop')
+    data = request.get_json() or {}
+    tag_name = data.get('tag_name')
+    return _trigger_remediation('stop', tag_name=tag_name)
 
 
 @api.route('/remediate/reset', methods=['POST'])
 def remediate_reset():
     """Trigger emergency reset remediation."""
-    return _trigger_remediation('reset')
+    data = request.get_json() or {}
+    tag_name = data.get('tag_name')
+    return _trigger_remediation('reset', tag_name=tag_name)
 
 
 @api.route('/remediate/restart', methods=['POST'])
 def remediate_restart():
     """Trigger emergency restart remediation."""
-    return _trigger_remediation('restart')
+    data = request.get_json() or {}
+    tag_name = data.get('tag_name')
+    return _trigger_remediation('restart', tag_name=tag_name)
 
 
-def _trigger_remediation(action: str) -> tuple:
+def _trigger_remediation(action: str, tag_name: Optional[str] = None) -> tuple:
     """Internal function to trigger remediation.
     
     Args:
         action: Action type (stop, reset, restart)
+        tag_name: Optional tag name that triggered the remediation
         
     Returns:
         API response tuple
@@ -311,7 +318,8 @@ def _trigger_remediation(action: str) -> tuple:
             'action_type': action,
             'status': RemediationStatus.PENDING.value,
             'start_time': datetime.now().isoformat(),
-            'aap_job_id': aap_job_id
+            'aap_job_id': aap_job_id,
+            'tag_name': tag_name  # Track which tag triggered this remediation (if any)
         }
         
         _remediation_jobs[job_id] = remediation_job

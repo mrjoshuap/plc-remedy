@@ -318,6 +318,12 @@
         <!-- Remediation Controls -->
         <div class="card">
             <h2>Remediation Controls</h2>
+            <div style="margin-bottom: 1rem;">
+                <label for="remediation-tag-select" style="display: block; margin-bottom: 0.5rem; font-weight: bold;">Select Tag (Optional):</label>
+                <select id="remediation-tag-select" style="width: 100%; padding: 0.5rem; font-size: 1rem; border: 1px solid #ddd; border-radius: 4px;">
+                    <option value="">None (General Remediation)</option>
+                </select>
+            </div>
             <div class="btn-group">
                 <button class="btn btn-danger" onclick="triggerRemediation('stop')">Emergency Stop</button>
                 <button class="btn btn-warning" onclick="triggerRemediation('reset')">Emergency Reset</button>
@@ -362,13 +368,14 @@
                 <thead>
                     <tr>
                         <th>Job ID</th>
+                        <th>Tag</th>
                         <th>Action</th>
                         <th>Status</th>
                         <th>Time</th>
                     </tr>
                 </thead>
                 <tbody id="aap-jobs-body">
-                    <tr><td colspan="4" class="loading">No jobs yet</td></tr>
+                    <tr><td colspan="5" class="loading">No jobs yet</td></tr>
                 </tbody>
             </table>
         </div>
@@ -499,11 +506,28 @@
                     const configRes = await fetch('/api/v1/config');
                     if (configRes.ok) {
                         const configData = await configRes.json();
-                        if (configData.success && configData.data && configData.data.tags) {
-                            // Populate tagConfig with tag configuration including nominal values
-                            tagConfig = configData.data.tags;
-                            console.log('Tag configuration loaded:', tagConfig);
+                    if (configData.success && configData.data && configData.data.tags) {
+                        // Populate tagConfig with tag configuration including nominal values
+                        tagConfig = configData.data.tags;
+                        console.log('Tag configuration loaded:', tagConfig);
+                        
+                        // Populate tag selector dropdown
+                        const tagSelect = document.getElementById('remediation-tag-select');
+                        if (tagSelect) {
+                            // Clear existing options except the first "None" option
+                            while (tagSelect.children.length > 1) {
+                                tagSelect.removeChild(tagSelect.lastChild);
+                            }
+                            
+                            // Add tag options
+                            Object.keys(tagConfig).forEach(tagKey => {
+                                const option = document.createElement('option');
+                                option.value = tagKey;
+                                option.textContent = tagKey;
+                                tagSelect.appendChild(option);
+                            });
                         }
+                    }
                     }
                 } catch (configError) {
                     console.warn('Failed to load configuration:', configError);
@@ -875,12 +899,29 @@
             }
             
             try {
-                const res = await fetch(`/api/v1/remediate/${action}`, { method: 'POST' });
+                // Get selected tag from dropdown
+                const tagSelect = document.getElementById('remediation-tag-select');
+                const tagName = tagSelect ? tagSelect.value : null;
+                
+                // Prepare request body
+                const body = {};
+                if (tagName) {
+                    body.tag_name = tagName;
+                }
+                
+                const res = await fetch(`/api/v1/remediate/${action}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(body)
+                });
                 const data = await res.json();
                 
                 const statusEl = document.getElementById('remediation-status');
                 if (data.success) {
-                    statusEl.innerHTML = `<span class="badge badge-success">Remediation triggered: ${data.data.job_id}</span>`;
+                    const tagInfo = tagName ? ` for tag: ${tagName}` : '';
+                    statusEl.innerHTML = `<span class="badge badge-success">Remediation triggered: ${data.data.job_id}${tagInfo}</span>`;
                     updateAAPJobs();
                 } else {
                     statusEl.innerHTML = `<span class="badge badge-error">Error: ${data.error}</span>`;
@@ -928,13 +969,14 @@
                     tbody.innerHTML = data.data.jobs.map(job => `
                         <tr>
                             <td>${job.job_id}</td>
+                            <td>${job.tag_name || 'N/A'}</td>
                             <td>${job.action_type}</td>
                             <td><span class="badge badge-${job.status === 'successful' ? 'success' : job.status === 'failed' ? 'error' : 'warning'}">${job.status}</span></td>
                             <td>${new Date(job.start_time).toLocaleString()}</td>
                         </tr>
                     `).join('');
                 } else {
-                    tbody.innerHTML = '<tr><td colspan="4" class="loading">No jobs yet</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="5" class="loading">No jobs yet</td></tr>';
                 }
             } catch (error) {
                 console.error('Error updating AAP jobs:', error);

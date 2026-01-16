@@ -231,7 +231,9 @@ class MonitorService:
                 self._tag_history[tag_name].append(history_entry)
         
         # Evaluate thresholds OUTSIDE the lock (they will acquire lock internally if needed)
+        logger.debug(f"Evaluating thresholds for {len(threshold_evaluations)} tags: {[tn for tn, _, _ in threshold_evaluations]}")
         for tag_name, value, timestamp in threshold_evaluations:
+            logger.debug(f"Calling _evaluate_threshold for tag_name='{tag_name}' (config key), value={value}")
             self._evaluate_threshold(tag_name, value, timestamp)
         
         # Check connection state changes OUTSIDE the lock to avoid blocking eventlet
@@ -264,12 +266,17 @@ class MonitorService:
             value: Current tag value
             timestamp: Timestamp of the read
         """
+        logger.debug(f"Evaluating threshold for tag_name='{tag_name}', value={value}, available config tags: {list(self.config.tags.keys())}")
+        
         if tag_name not in self.config.tags:
+            logger.warning(f"Tag '{tag_name}' not found in config.tags. Available tags: {list(self.config.tags.keys())}")
             return
         
         tag_config = self.config.tags[tag_name]
         violation = False
         violation_reason = ""
+        
+        logger.debug(f"Tag config for '{tag_name}': failure_condition={tag_config.failure_condition}, nominal={tag_config.nominal}, thresholds=({tag_config.failure_threshold_low}, {tag_config.failure_threshold_high})")
         
         # Evaluate based on failure condition
         if tag_config.failure_condition == 'equals':
@@ -304,9 +311,14 @@ class MonitorService:
         
         # Handle violation (acquire lock only when modifying shared state)
         if violation:
+            logger.debug(f"Violation detected for '{tag_name}': {violation_reason}")
+            
             # Check if this is a new violation or existing one
             is_new_violation = False
             with self._lock:
+                active_violation_keys = list(self._active_violations.keys())
+                logger.debug(f"Active violations before check: {active_violation_keys}")
+                
                 if tag_name not in self._active_violations:
                     # New violation
                     is_new_violation = True
@@ -319,6 +331,9 @@ class MonitorService:
                         timestamp=timestamp
                     )
                     self._active_violations[tag_name] = violation_obj
+                    logger.info(f"New violation added to _active_violations for '{tag_name}'. Total active violations: {len(self._active_violations)}")
+                else:
+                    logger.debug(f"Violation already exists in _active_violations for '{tag_name}'")
             
             # Emit violation event (outside lock)
             self._emit_event(EventType.THRESHOLD_VIOLATION, {
@@ -480,12 +495,15 @@ class MonitorService:
         """Clear a violation for a specific tag.
         
         Args:
-            tag_name: Name of the tag to clear violation for
+            tag_name: Name of the tag to clear violation for (should be config key, not PLC tag name)
         """
+        logger.debug(f"clear_violation called for tag_name='{tag_name}'. Active violations before clear: {list(self._active_violations.keys())}")
         with self._lock:
             if tag_name in self._active_violations:
                 del self._active_violations[tag_name]
-                logger.info(f"Violation cleared for {tag_name} after successful remediation")
+                logger.info(f"Violation cleared for '{tag_name}' after successful remediation. Remaining active violations: {list(self._active_violations.keys())}")
+            else:
+                logger.warning(f"Attempted to clear violation for '{tag_name}' but it's not in _active_violations. Active violations: {list(self._active_violations.keys())}")
     
     def get_statistics(self) -> Dict[str, Any]:
         """Get monitoring statistics.

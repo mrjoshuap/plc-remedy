@@ -156,7 +156,7 @@ def create_app():
             from app.models import RemediationStatus
             from app.api.routes import _remediation_jobs, _last_remediation_time as api_last_remediation_time
             
-            logger.info(f"Remediation hook called with action: {action}, tag_name: {tag_name}")
+            logger.info(f"Remediation hook called with action: {action}, tag_name: {tag_name} (type: {type(tag_name).__name__})")
             
             if not aap_client:
                 logger.warning("AAP client not available for auto-remediation")
@@ -197,8 +197,9 @@ def create_app():
                     'status': RemediationStatus.PENDING.value,
                     'start_time': datetime.now().isoformat(),
                     'aap_job_id': aap_job_id,
-                    'tag_name': tag_name  # Track which tag triggered this remediation
+                    'tag_name': tag_name  # Track which tag triggered this remediation (config key, e.g., "light", "motor_speed")
                 }
+                logger.debug(f"Created remediation job with tag_name='{tag_name}' (stored in job record)")
                 
                 # Add to API routes' remediation jobs dictionary
                 _remediation_jobs[job_id] = remediation_job

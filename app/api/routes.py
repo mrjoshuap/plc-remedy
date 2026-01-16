@@ -372,10 +372,12 @@ def get_remediation_status():
                     # Clear violation if job just became successful and has a tag_name
                     if new_status == 'successful' and old_status != 'successful' and job.get('tag_name') and _monitor:
                         try:
-                            _monitor.clear_violation(job['tag_name'])
-                            logger.info(f"Cleared violation for {job['tag_name']} after successful remediation job {job_id}")
+                            tag_name = job['tag_name']
+                            logger.info(f"Attempting to clear violation for tag_name='{tag_name}' after successful remediation job {job_id}")
+                            _monitor.clear_violation(tag_name)
+                            logger.info(f"Cleared violation for '{tag_name}' after successful remediation job {job_id}")
                         except Exception as e:
-                            logger.warning(f"Error clearing violation for {job['tag_name']}: {e}")
+                            logger.warning(f"Error clearing violation for {job['tag_name']}: {e}", exc_info=True)
             except Exception as e:
                 logger.warning(f"Error checking AAP job status: {e}")
         
@@ -398,10 +400,12 @@ def get_remediation_status():
                         # Clear violation if job just became successful and has a tag_name
                         if new_status == 'successful' and old_status != 'successful' and job.get('tag_name') and _monitor:
                             try:
-                                _monitor.clear_violation(job['tag_name'])
-                                logger.info(f"Cleared violation for {job['tag_name']} after successful remediation job {job.get('job_id')}")
+                                tag_name = job['tag_name']
+                                logger.info(f"Attempting to clear violation for tag_name='{tag_name}' after successful remediation job {job.get('job_id')}")
+                                _monitor.clear_violation(tag_name)
+                                logger.info(f"Cleared violation for '{tag_name}' after successful remediation job {job.get('job_id')}")
                             except Exception as e:
-                                logger.warning(f"Error clearing violation for {job.get('tag_name')}: {e}")
+                                logger.warning(f"Error clearing violation for {job.get('tag_name')}: {e}", exc_info=True)
                 except Exception as e:
                     logger.warning(f"Error checking AAP job status for job {job.get('job_id')}: {e}")
             jobs_list.append(job)

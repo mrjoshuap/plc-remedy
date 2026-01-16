@@ -2,7 +2,48 @@
 
 This guide explains how to test the PLC Self-Healing Middleware using all mock components.
 
+## Prerequisites
+
+- Python 3.10+ with dependencies installed (`pip install -r requirements.txt`)
+- tmux (for using the test wrapper script - recommended)
+  - **macOS**: `brew install tmux`
+  - **Linux**: `sudo apt-get install tmux` (or use your distribution's package manager)
+
 ## Quick Test Setup
+
+### Option A: Using the Test Wrapper Script (Recommended)
+
+The `run_tests.sh` script uses tmux to run all test components simultaneously with all logs visible in a single window.
+
+1. **Use the testing configuration:**
+```bash
+cp config/config.yaml.test config/config.yaml
+```
+
+2. **Run the wrapper script:**
+```bash
+./run_tests.sh
+```
+
+This will start all components in a tmux session with 3 panes arranged vertically:
+- **Top pane**: Mock PLC (port 44818)
+- **Middle pane**: Mock AAP (port 8080)
+- **Bottom pane**: Main application (port 15000)
+
+All logs are visible simultaneously. The script prevents detaching/reattaching - when you exit tmux, all components stop automatically.
+
+3. **Open the dashboard:**
+   - Navigate to http://localhost:15000
+   - You should see real-time updates from the mock PLC
+
+**Stopping the test environment:**
+- Press `Ctrl+C` in any pane, or
+- Type `exit` in any pane, or
+- Close the terminal window
+
+All processes will be automatically stopped when the tmux session ends.
+
+### Option B: Manual Setup (Alternative)
 
 1. **Use the testing configuration:**
 ```bash
@@ -35,6 +76,51 @@ python run.py
 5. **Open the dashboard:**
    - Navigate to http://localhost:15000
    - You should see real-time updates from the mock PLC
+
+## Using the Test Wrapper Script
+
+The `run_tests.sh` wrapper script provides a convenient way to run all test components with visible logs in a single tmux window.
+
+### Features
+
+- **3-pane vertical layout**: All component logs visible simultaneously
+- **Automatic cleanup**: All processes stop when tmux session ends
+- **No detaching**: Prevents detaching/reattaching for simplicity
+- **Pane titles**: Each pane is labeled for easy identification
+
+### Layout
+
+```
+┌─────────────────────────┐
+│   Mock PLC (Port 44818)  │  ← Pane 0 (Top)
+├─────────────────────────┤
+│   Mock AAP (Port 8080)   │  ← Pane 1 (Middle)
+├─────────────────────────┤
+│   Main App (Port 15000)  │  ← Pane 2 (Bottom)
+└─────────────────────────┘
+```
+
+### Usage
+
+```bash
+./run_tests.sh
+```
+
+The script will:
+1. Check if tmux is installed
+2. Verify you're in the project root directory
+3. Create a new tmux session with 3 panes
+4. Start each component in its respective pane
+5. Attach to the session (blocking until exit)
+
+### Stopping
+
+To stop all components:
+- Press `Ctrl+C` in any pane
+- Type `exit` in any pane
+- Close the terminal window
+
+The script automatically cleans up all processes when the tmux session ends.
 
 ## Testing Scenarios
 
@@ -225,6 +311,33 @@ If you encounter connection issues with the mock PLC:
 - Verify `mock_mode: true` in config.yaml
 - Check AAP client logs
 - Test AAP endpoint directly: `curl http://localhost:8080/api/v2/job_templates/42/launch/`
+
+### tmux Issues (when using wrapper script)
+- **"tmux not found"**: Install tmux using your package manager
+- **"Session already exists"**: The script will automatically kill existing sessions, but you can manually kill with `tmux kill-session -t plc-test`
+- **Can't see all panes**: Resize your terminal window or use `tmux resize-pane` commands
+
+## Stopping the Test Environment
+
+### If Using the Wrapper Script
+
+The wrapper script automatically handles cleanup. To stop:
+- Press `Ctrl+C` in any tmux pane
+- Type `exit` in any pane
+- Close the terminal window
+
+All processes (mock PLC, mock AAP, and main application) will be stopped automatically.
+
+### If Running Components Manually
+
+Stop each component individually:
+- Press `Ctrl+C` in each terminal window
+- Or use process management commands:
+  ```bash
+  pkill -f cip_plc.py
+  pkill -f mock_aap.py
+  pkill -f run.py
+  ```
 
 ## Test Checklist
 

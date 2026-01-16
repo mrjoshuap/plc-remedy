@@ -5,6 +5,7 @@
 - [ ] Python 3.10+ installed
 - [ ] Network access to PLC (or use mock PLC)
 - [ ] Configuration file created
+- [ ] tmux installed (for testing with wrapper script - optional but recommended)
 
 ## 5-Minute Setup
 
@@ -29,24 +30,44 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-3. **Create configuration:**
+3. **Install tmux (for testing with wrapper script):**
+```bash
+# macOS
+brew install tmux
+
+# Linux
+sudo apt-get install tmux  # or use your distribution's package manager
+```
+
+4. **Create configuration:**
 ```bash
 cp config/config.yaml.example config/config.yaml
 # Edit config/config.yaml with your settings
 ```
 
-4. **Set environment variables (if using real AAP):**
+5. **Set environment variables (if using real AAP):**
 ```bash
 export AAP_TOKEN="your-token-here"
 ```
 
-5. **Start mock PLC (for testing):**
+6. **Start the application:**
+
+**Option A: Using the tmux wrapper script (Recommended for testing)**
 ```bash
-python mock/cip_plc.py --ip 127.0.0.1 --port 44818 --mode normal &
+./run_tests.sh
 ```
 
-6. **Run the application:**
+This starts all components (mock PLC, mock AAP, and main app) in separate tmux panes with all logs visible. To stop, press `Ctrl+C` or close the terminal - all components will stop automatically.
+
+**Option B: Manual startup (Alternative)**
 ```bash
+# Terminal 1: Start mock PLC
+python mock/cip_plc.py --ip 127.0.0.1 --port 44818 --mode normal &
+
+# Terminal 2: Start mock AAP (optional)
+python mock/mock_aap.py &
+
+# Terminal 3: Run the application
 python run.py
 ```
 
@@ -93,6 +114,23 @@ python mock/cip_plc.py --ip 127.0.0.1 --port 44818 --mode degraded
 - Verify config.yaml syntax (use a YAML validator)
 - Check that all required fields are present
 - Ensure environment variables are set if using `${VAR}` syntax
+
+### "tmux not found" (when using wrapper script)
+- Install tmux: `brew install tmux` (macOS) or `sudo apt-get install tmux` (Linux)
+- Verify installation: `tmux -V`
+
+## Stopping the Test Environment
+
+If using the `run_tests.sh` wrapper script:
+- Press `Ctrl+C` in any tmux pane, or
+- Type `exit` in any pane, or
+- Close the terminal window
+
+All processes will be automatically stopped when the tmux session ends.
+
+If running components manually:
+- Stop each component with `Ctrl+C` in its respective terminal
+- Or use `pkill -f cip_plc.py`, `pkill -f mock_aap.py`, `pkill -f run.py`
 
 ## Next Steps
 

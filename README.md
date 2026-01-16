@@ -35,6 +35,7 @@ This project implements the research described in SAE Paper "From Reactive to Pr
 - Podman or Docker (for containerized deployment)
 - Access to Allen-Bradley PLC (or use mock PLC simulator)
 - Ansible Automation Platform (optional, mock mode available)
+- tmux (for testing with the wrapper script - see Testing section)
 
 ## Installation
 
@@ -333,9 +334,42 @@ plc-remedy/
 
 ### Running Tests
 
+#### Unit Tests
+
 ```bash
 pytest tests/
 ```
+
+#### Testing with tmux Wrapper Script
+
+For easy testing with all components running simultaneously, use the `run_tests.sh` wrapper script. This script uses tmux to display all component logs in a single window with 3 panes (1 column, 3 rows).
+
+**Install tmux:**
+
+- **macOS**: `brew install tmux`
+- **Linux**: `sudo apt-get install tmux` (or use your distribution's package manager)
+- **Other**: See [tmux installation guide](https://github.com/tmux/tmux/wiki/Installing)
+
+**Using the wrapper script:**
+
+```bash
+./run_tests.sh
+```
+
+This will start:
+- **Top pane**: Mock PLC (port 44818)
+- **Middle pane**: Mock AAP (port 8080)
+- **Bottom pane**: Main application (port 15000)
+
+All logs are visible simultaneously in the tmux window. The script prevents detaching/reattaching - when you exit tmux (Ctrl+C or closing the terminal), all components will stop automatically.
+
+**Stopping the test environment:**
+
+- Press `Ctrl+C` in any pane, or
+- Type `exit` in any pane, or
+- Close the terminal window
+
+All processes will be cleaned up automatically when the tmux session ends.
 
 ### Code Style
 

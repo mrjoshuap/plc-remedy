@@ -24,8 +24,22 @@ except ImportError:
     from cip_objects import TagObject, ConnectionManager, IdentityObject
     from cip_services import CIPServiceHandler
 
-logging.basicConfig(level=logging.DEBUG)
+# Set logging level for all relevant modules
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
+
+# Also set DEBUG for cpppo-related modules
+logging.getLogger('cpppo').setLevel(logging.DEBUG)
+logging.getLogger('mock.cip_objects').setLevel(logging.DEBUG)
+logging.getLogger('mock.cip_services').setLevel(logging.DEBUG)
+logging.getLogger('mock.tag_manager').setLevel(logging.DEBUG)
+# Handle relative import paths
+logging.getLogger('cip_objects').setLevel(logging.DEBUG)
+logging.getLogger('cip_services').setLevel(logging.DEBUG)
+logging.getLogger('tag_manager').setLevel(logging.DEBUG)
 
 
 # Global tag manager (set by CIPPLC instance before starting server)
@@ -89,44 +103,56 @@ class ModeAwareAttribute(device.Attribute):
         """
         global _global_tag_manager
         
+        logger.debug(f"ModeAwareAttribute.__getitem__ called for {self.tag_name} with key={key}")
+        
         if _global_tag_manager is None:
             logger.warning(f"Tag manager not set for {self.tag_name}")
             default_value = 0 if not isinstance(key, slice) else [0]
+            logger.debug(f"Returning default value {default_value} for {self.tag_name} (no tag manager)")
             return default_value
         
         try:
+            logger.debug(f"Retrieving tag value for {self.tag_name} from tag manager")
             value = _global_tag_manager.get_tag_value(self.tag_name)
-            logger.debug(f"Attribute read {self.tag_name}: {value}")
+            logger.debug(f"Attribute read {self.tag_name}: {value} (type: {type(value).__name__})")
             
             # If key is a slice, return a list (cpppo expects iterable for slices)
             if isinstance(key, slice):
                 # Return a list with the value (for scalar tags, just one element)
-                return [value]
+                result = [value]
+                logger.debug(f"Returning slice result for {self.tag_name}: {result}")
+                return result
             else:
                 # Single index access, return the value directly
+                logger.debug(f"Returning single value for {self.tag_name}: {value}")
                 return value
         except KeyError:
-            logger.warning(f"Tag {self.tag_name} not found")
+            logger.warning(f"Tag {self.tag_name} not found in tag manager")
             default_value = 0 if not isinstance(key, slice) else [0]
+            logger.debug(f"Returning default value {default_value} for {self.tag_name} (KeyError)")
             return default_value
         except Exception as e:
-            logger.error(f"Error reading tag {self.tag_name}: {e}")
+            logger.error(f"Error reading tag {self.tag_name}: {e}", exc_info=True)
             default_value = 0 if not isinstance(key, slice) else [0]
+            logger.debug(f"Returning default value {default_value} for {self.tag_name} (exception)")
             return default_value
     
     def __setitem__(self, key, value):
         """Set tag value."""
         global _global_tag_manager
         
+        logger.debug(f"ModeAwareAttribute.__setitem__ called for {self.tag_name} with key={key}, value={value} (type: {type(value).__name__})")
+        
         if _global_tag_manager is None:
             logger.warning(f"Tag manager not set for {self.tag_name}")
             return
         
         try:
+            logger.debug(f"Setting tag value for {self.tag_name} via tag manager")
             _global_tag_manager.set_tag_value(self.tag_name, value)
-            logger.debug(f"Attribute write {self.tag_name}: {value}")
+            logger.debug(f"Attribute write {self.tag_name}: {value} (type: {type(value).__name__}) - success")
         except Exception as e:
-            logger.error(f"Failed to set tag {self.tag_name}: {e}")
+            logger.error(f"Failed to set tag {self.tag_name}: {e}", exc_info=True)
 
 
 class CIPPLC:

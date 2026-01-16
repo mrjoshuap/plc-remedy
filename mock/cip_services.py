@@ -101,24 +101,48 @@ class CIPServiceHandler:
         Returns:
             Tuple of (success: bool, status_code: int, response_data: bytes)
         """
+        service_name = {
+            SERVICE_READ_TAG: "Read Tag (0x4C)",
+            SERVICE_WRITE_TAG: "Write Tag (0x4D)",
+            SERVICE_FORWARD_OPEN: "Forward Open (0x54)",
+            SERVICE_FORWARD_CLOSE: "Forward Close (0x4E)",
+            SERVICE_GET_ATTRIBUTE_SINGLE: "Get Attribute Single (0x03)",
+            SERVICE_MULTIPLE_SERVICE_PACKET: "Multiple Service Packet (0x0A)"
+        }.get(service_code, f"Unknown (0x{service_code:02X})")
+        
+        logger.debug(f"Handling service: {service_name}, path length: {len(request_path)}, data length: {len(request_data)}")
+        logger.debug(f"Request path (hex): {request_path.hex() if request_path else 'empty'}")
+        
         try:
             if service_code == SERVICE_READ_TAG:
-                return self.handle_read_tag(request_path, request_data)
+                result = self.handle_read_tag(request_path, request_data)
+                logger.debug(f"Read Tag service completed: success={result[0]}, status=0x{result[1]:02X}")
+                return result
             elif service_code == SERVICE_WRITE_TAG:
-                return self.handle_write_tag(request_path, request_data)
+                result = self.handle_write_tag(request_path, request_data)
+                logger.debug(f"Write Tag service completed: success={result[0]}, status=0x{result[1]:02X}")
+                return result
             elif service_code == SERVICE_FORWARD_OPEN:
-                return self.handle_forward_open(request_path, request_data)
+                result = self.handle_forward_open(request_path, request_data)
+                logger.debug(f"Forward Open service completed: success={result[0]}, status=0x{result[1]:02X}")
+                return result
             elif service_code == SERVICE_FORWARD_CLOSE:
-                return self.handle_forward_close(request_path, request_data)
+                result = self.handle_forward_close(request_path, request_data)
+                logger.debug(f"Forward Close service completed: success={result[0]}, status=0x{result[1]:02X}")
+                return result
             elif service_code == SERVICE_GET_ATTRIBUTE_SINGLE:
-                return self.handle_get_attribute_single(request_path, request_data)
+                result = self.handle_get_attribute_single(request_path, request_data)
+                logger.debug(f"Get Attribute Single service completed: success={result[0]}, status=0x{result[1]:02X}")
+                return result
             elif service_code == SERVICE_MULTIPLE_SERVICE_PACKET:
-                return self.handle_multiple_service_packet(request_data)
+                result = self.handle_multiple_service_packet(request_data)
+                logger.debug(f"Multiple Service Packet service completed: success={result[0]}, status=0x{result[1]:02X}")
+                return result
             else:
                 logger.warning(f"Unsupported service code: 0x{service_code:02X}")
                 return (False, ERROR_SERVICE_NOT_SUPPORTED, b"")
         except Exception as e:
-            logger.error(f"Service handler error: {e}", exc_info=True)
+            logger.error(f"Service handler error for {service_name}: {e}", exc_info=True)
             return (False, ERROR_CONNECTION_FAILURE, b"")
     
     def handle_read_tag(self, tag_path: bytes, request_data: bytes) -> Tuple[bool, int, bytes]:
@@ -131,6 +155,9 @@ class CIPServiceHandler:
         Returns:
             Tuple of (success, status_code, response_data)
         """
+        logger.debug(f"Read Tag request - path length: {len(tag_path)}, request data length: {len(request_data)}")
+        logger.debug(f"Tag path (hex): {tag_path.hex() if tag_path else 'empty'}")
+        
         success, data_type, value_bytes = self.tag_object.read_tag(tag_path)
         
         if success:
@@ -138,8 +165,10 @@ class CIPServiceHandler:
             response = struct.pack("<B", ERROR_SUCCESS)  # Status
             response += struct.pack("<B", data_type)  # Data type
             response += value_bytes  # Value
+            logger.debug(f"Read Tag successful - data_type: 0x{data_type:02X}, value_bytes length: {len(value_bytes)}")
             return (True, ERROR_SUCCESS, response)
         else:
+            logger.debug(f"Read Tag failed - tag not found or error occurred")
             return (False, ERROR_OBJECT_DOES_NOT_EXIST, b"")
     
     def handle_write_tag(self, tag_path: bytes, request_data: bytes) -> Tuple[bool, int, bytes]:
@@ -152,19 +181,26 @@ class CIPServiceHandler:
         Returns:
             Tuple of (success, status_code, response_data)
         """
+        logger.debug(f"Write Tag request - path length: {len(tag_path)}, request data length: {len(request_data)}")
+        logger.debug(f"Tag path (hex): {tag_path.hex() if tag_path else 'empty'}")
+        
         if len(request_data) < 2:
+            logger.debug(f"Write Tag failed - insufficient data: {len(request_data)} bytes")
             return (False, ERROR_NOT_ENOUGH_DATA, b"")
         
         data_type = request_data[0]
         value_data = request_data[1:]
+        logger.debug(f"Write Tag - data_type: 0x{data_type:02X}, value_data length: {len(value_data)}")
         
         success = self.tag_object.write_tag(tag_path, data_type, value_data)
         
         if success:
             # Response: Status (1 byte)
             response = struct.pack("<B", ERROR_SUCCESS)
+            logger.debug(f"Write Tag successful")
             return (True, ERROR_SUCCESS, response)
         else:
+            logger.debug(f"Write Tag failed - tag not found or error occurred")
             return (False, ERROR_OBJECT_DOES_NOT_EXIST, b"")
     
     def handle_forward_open(self, request_path: bytes, request_data: bytes) -> Tuple[bool, int, bytes]:
@@ -177,12 +213,17 @@ class CIPServiceHandler:
         Returns:
             Tuple of (success, status_code, response_data)
         """
+        logger.debug(f"Forward Open request - path length: {len(request_path)}, request data length: {len(request_data)}")
+        logger.debug(f"Request path (hex): {request_path.hex() if request_path else 'empty'}")
+        
         success, response_data, conn_id_o_to_t, conn_id_t_to_o = \
             self.connection_manager.forward_open(request_data)
         
         if success:
+            logger.debug(f"Forward Open successful - O->T: 0x{conn_id_o_to_t:04X}, T->O: 0x{conn_id_t_to_o:04X}")
             return (True, ERROR_SUCCESS, response_data)
         else:
+            logger.debug(f"Forward Open failed")
             return (False, ERROR_CONNECTION_FAILURE, response_data)
     
     def handle_forward_close(self, request_path: bytes, request_data: bytes) -> Tuple[bool, int, bytes]:
@@ -195,14 +236,23 @@ class CIPServiceHandler:
         Returns:
             Tuple of (success, status_code, response_data)
         """
+        logger.debug(f"Forward Close request - path length: {len(request_path)}, request data length: {len(request_data)}")
+        logger.debug(f"Request path (hex): {request_path.hex() if request_path else 'empty'}")
+        
         # Parse connection ID from request (simplified)
         if len(request_data) >= 4:
             connection_id = struct.unpack("<I", request_data[:4])[0]
+            logger.debug(f"Forward Close - connection ID: 0x{connection_id:04X}")
             success = self.connection_manager.forward_close(connection_id)
             
             if success:
+                logger.debug(f"Forward Close successful for connection 0x{connection_id:04X}")
                 response = struct.pack("<H", ERROR_SUCCESS)
                 return (True, ERROR_SUCCESS, response)
+            else:
+                logger.debug(f"Forward Close failed - connection 0x{connection_id:04X} not found")
+        else:
+            logger.debug(f"Forward Close failed - insufficient data: {len(request_data)} bytes")
         
         return (False, ERROR_CONNECTION_FAILURE, b"")
     

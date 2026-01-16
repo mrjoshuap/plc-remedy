@@ -12,6 +12,12 @@ from app.models import EventType, Severity
 
 logger = logging.getLogger(__name__)
 
+# Startup grace period - no chaos injection for this duration after initialization
+STARTUP_GRACE_PERIOD_SECONDS = 10
+
+# Per-tag injection cooldown - minimum time between injections for the same tag
+TAG_INJECTION_COOLDOWN_SECONDS = 5
+
 
 class FailureType(Enum):
     """Types of failures that can be injected."""
@@ -36,12 +42,18 @@ class ChaosEngine:
         self._enabled = config.enabled
         self._lock = threading.Lock()
         
+        # Track startup time for grace period
+        self._start_time = datetime.now()
+        
         # Track injected failures
         self._injection_history: list = []
         self._active_injections: Dict[str, Dict[str, Any]] = {}
         
         # Track active value anomalies per tag (with expiration times)
         self._active_value_anomalies: Dict[str, Dict[str, Any]] = {}
+        
+        # Track last injection time per tag for cooldown
+        self._last_injection_time: Dict[str, datetime] = {}
         
         # Connection loss simulation
         self._connection_lost = False
@@ -54,6 +66,41 @@ class ChaosEngine:
             True if enabled, False otherwise
         """
         return self._enabled
+    
+    def _is_in_grace_period(self) -> bool:
+        """Check if currently in startup grace period.
+        
+        Returns:
+            True if within grace period, False otherwise
+        """
+        elapsed = (datetime.now() - self._start_time).total_seconds()
+        return elapsed < STARTUP_GRACE_PERIOD_SECONDS
+    
+    def _get_grace_period_remaining(self) -> float:
+        """Get remaining time in grace period.
+        
+        Returns:
+            Remaining seconds in grace period (0 if grace period has passed)
+        """
+        elapsed = (datetime.now() - self._start_time).total_seconds()
+        remaining = STARTUP_GRACE_PERIOD_SECONDS - elapsed
+        return max(0.0, remaining)
+    
+    def _is_tag_in_cooldown(self, tag_name: str) -> bool:
+        """Check if a tag is currently in cooldown period.
+        
+        Args:
+            tag_name: Name of the tag to check
+            
+        Returns:
+            True if tag is in cooldown, False otherwise
+        """
+        if tag_name not in self._last_injection_time:
+            return False
+        
+        last_injection = self._last_injection_time[tag_name]
+        elapsed = (datetime.now() - last_injection).total_seconds()
+        return elapsed < TAG_INJECTION_COOLDOWN_SECONDS
     
     def enable(self) -> None:
         """Enable chaos injection."""
@@ -68,6 +115,7 @@ class ChaosEngine:
             # Clear active injections
             self._active_injections.clear()
             self._active_value_anomalies.clear()
+            self._last_injection_time.clear()
             self._connection_lost = False
             logger.info("Chaos injection disabled")
     
@@ -95,6 +143,10 @@ class ChaosEngine:
         if not self._enabled:
             return value
         
+        # Check startup grace period
+        if self._is_in_grace_period():
+            return value
+        
         with self._lock:
             # Check for existing active anomaly
             if tag_name in self._active_value_anomalies:
@@ -106,9 +158,13 @@ class ChaosEngine:
                     # Expired, remove and return original
                     del self._active_value_anomalies[tag_name]
                     logger.info(f"Chaos: Value anomaly expired for {tag_name}, returning to normal")
-                    return value
+                    # Continue to check cooldown even after anomaly expires
         
-        # No active anomaly, check if we should inject
+        # Check cooldown period (after active anomaly check)
+        if self._is_tag_in_cooldown(tag_name):
+            return value
+        
+        # No active anomaly and not in cooldown, check if we should inject
         if random.random() > self.config.failure_injection_rate:
             return value
         
@@ -178,6 +234,9 @@ class ChaosEngine:
                 'end_time': end_time,
                 'duration_seconds': duration
             }
+            
+            # Update last injection time for cooldown tracking
+            self._last_injection_time[tag_name] = datetime.now()
         
         logger.warning(f"Chaos: Injected value anomaly for {tag_name}: {value} -> {injected_value} (duration: {duration}s)")
         
@@ -189,6 +248,12 @@ class ChaosEngine:
         Args:
             duration_ms: Duration of timeout in milliseconds
         """
+        # Check startup grace period
+        if self._is_in_grace_period():
+            remaining = self._get_grace_period_remaining()
+            logger.info(f"Chaos injection skipped: startup grace period active ({remaining:.1f}s remaining)")
+            return
+        
         if FailureType.NETWORK_TIMEOUT.value not in self.config.failure_types:
             logger.warning("Network timeout injection not enabled in config")
             return
@@ -220,6 +285,12 @@ class ChaosEngine:
         Args:
             duration_seconds: Duration of connection loss in seconds
         """
+        # Check startup grace period
+        if self._is_in_grace_period():
+            remaining = self._get_grace_period_remaining()
+            logger.info(f"Chaos injection skipped: startup grace period active ({remaining:.1f}s remaining)")
+            return
+        
         if FailureType.CONNECTION_LOSS.value not in self.config.failure_types:
             logger.warning("Connection loss injection not enabled in config")
             return
@@ -336,6 +407,18 @@ class ChaosEngine:
             Dictionary with current status
         """
         with self._lock:
+            in_grace_period = self._is_in_grace_period()
+            grace_period_remaining = self._get_grace_period_remaining()
+            
+            # Clean up old cooldown entries (older than 1 hour)
+            now = datetime.now()
+            tags_to_remove = [
+                tag for tag, last_time in self._last_injection_time.items()
+                if (now - last_time).total_seconds() > 3600
+            ]
+            for tag in tags_to_remove:
+                del self._last_injection_time[tag]
+            
             return {
                 'enabled': self._enabled,
                 'failure_injection_rate': self.config.failure_injection_rate,
@@ -344,5 +427,8 @@ class ChaosEngine:
                 'active_value_anomalies': len(self._active_value_anomalies),
                 'connection_lost': self._connection_lost,
                 'total_injections': len(self._injection_history),
-                'recent_injections': self._injection_history[-10:] if self._injection_history else []
+                'recent_injections': self._injection_history[-10:] if self._injection_history else [],
+                'in_grace_period': in_grace_period,
+                'grace_period_remaining_seconds': round(grace_period_remaining, 1) if in_grace_period else 0.0,
+                'tags_in_cooldown': len([tag for tag in self._last_injection_time.keys() if self._is_tag_in_cooldown(tag)])
             }

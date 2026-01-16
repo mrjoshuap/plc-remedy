@@ -67,8 +67,7 @@ dashboard:
   refresh_interval_ms: 1000
   history_retention_hours: 1  # Shorter retention for testing
   chart_data_points: 50      # Fewer data points for testing
-
-    failure_value: 1         # Not used for not_equals, but kept for consistency
+  failure_value: 1         # Not used for not_equals, but kept for consistency
 
 aap:
   enabled: true

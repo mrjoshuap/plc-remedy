@@ -493,6 +493,23 @@
         async function loadInitialData() {
             console.log('loadInitialData() started');
             try {
+                // Load configuration to populate tagConfig with nominal values
+                console.log('Fetching /api/v1/config...');
+                try {
+                    const configRes = await fetch('/api/v1/config');
+                    if (configRes.ok) {
+                        const configData = await configRes.json();
+                        if (configData.success && configData.data && configData.data.tags) {
+                            // Populate tagConfig with tag configuration including nominal values
+                            tagConfig = configData.data.tags;
+                            console.log('Tag configuration loaded:', tagConfig);
+                        }
+                    }
+                } catch (configError) {
+                    console.warn('Failed to load configuration:', configError);
+                    // Continue even if config load fails
+                }
+                
                 // Load status
                 console.log('Fetching /api/v1/status...');
                 const statusController = new AbortController();
@@ -667,7 +684,19 @@
             for (const [tagName, result] of Object.entries(tagValues)) {
                 console.log(`Processing tag ${tagName}:`, result);
                 const row = document.createElement('tr');
-                const nominal = tagConfig[tagName]?.nominal || '-';
+                // Find the config entry where the 'name' field matches the tagName
+                // tagConfig is keyed by config keys (e.g., "motor_speed"), but tagName is the PLC tag name (e.g., "Motor_Speed")
+                let nominal = '-';
+                for (const [configKey, tagData] of Object.entries(tagConfig)) {
+                    if (tagData && tagData.name === tagName) {
+                        nominal = tagData.nominal !== undefined ? tagData.nominal : '-';
+                        break;
+                    }
+                }
+                // Fallback: try direct lookup in case tagName matches a config key
+                if (nominal === '-' && tagConfig[tagName] && tagConfig[tagName].nominal !== undefined) {
+                    nominal = tagConfig[tagName].nominal;
+                }
                 const status = result.success ? 'OK' : 'ERROR';
                 const badgeClass = result.success ? 'badge-success' : 'badge-error';
                 

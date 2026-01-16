@@ -53,27 +53,41 @@ def get_job(job_id):
     
     job = _jobs[job_id]
     
-    # Simulate job progression
+    # Calculate elapsed time since job creation
+    created_time = datetime.fromisoformat(job['created'])
+    elapsed_seconds = (datetime.now() - created_time).total_seconds()
+    
+    # Time-based job progression (deterministic)
+    # 0-2 seconds: pending
+    # 2-5 seconds: running
+    # 5+ seconds: successful (or failed with 5% chance)
+    
     if job['status'] == 'pending':
-        # Randomly move to running after some time
-        if random.random() < 0.3:
+        if elapsed_seconds >= 2:
             job['status'] = 'running'
             job['started'] = datetime.now().isoformat()
     elif job['status'] == 'running':
-        # Randomly complete
-        if random.random() < 0.2:
-            if random.random() < 0.1:  # 10% failure rate
+        if elapsed_seconds >= 5:
+            # 5% chance of failure to simulate real-world scenarios
+            if random.random() < 0.05:
                 job['status'] = 'failed'
             else:
                 job['status'] = 'successful'
             job['finished'] = datetime.now().isoformat()
+    
+    # Calculate elapsed time for response
+    if job.get('started'):
+        started_time = datetime.fromisoformat(job['started'])
+        elapsed = int((datetime.now() - started_time).total_seconds())
+    else:
+        elapsed = int(elapsed_seconds) if elapsed_seconds > 0 else 0
     
     return jsonify({
         'id': job_id,
         'status': job['status'],
         'finished': job.get('finished') is not None,
         'failed': job['status'] == 'failed',
-        'elapsed': random.randint(5, 30) if job['status'] != 'pending' else 0,
+        'elapsed': elapsed,
         'job_template': job['job_template']
     })
 

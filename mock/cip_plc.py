@@ -24,7 +24,7 @@ except ImportError:
     from cip_objects import TagObject, ConnectionManager, IdentityObject
     from cip_services import CIPServiceHandler
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 

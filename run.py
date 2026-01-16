@@ -138,6 +138,8 @@ def create_app():
             from app.models import RemediationStatus
             from app.api.routes import _remediation_jobs, _last_remediation_time as api_last_remediation_time
             
+            logger.info(f"Remediation hook called with action: {action}")
+            
             if not aap_client:
                 logger.warning("AAP client not available for auto-remediation")
                 return
@@ -199,7 +201,9 @@ def create_app():
             except Exception as e:
                 logger.error(f"Error triggering auto-remediation: {e}", exc_info=True)
         
+        logger.info(f"Setting remediation hook on monitor service (auto_remediate={config.remediation.auto_remediate})")
         monitor_service.set_remediation_hook(remediation_hook)
+        logger.info("Remediation hook set on monitor service")
         
         # Initialize API with dependencies
         init_api(monitor_service, aap_client, chaos_engine, config, socketio)

@@ -54,6 +54,11 @@ class MonitorService:
         # Active violations tracking
         self._active_violations: Dict[str, ThresholdViolation] = {}
         
+        # Track consecutive normal readings before resolving violations (stability period)
+        # Require 3 consecutive normal readings before resolving a violation
+        self._normal_readings_count: Dict[str, int] = {}
+        self._violation_resolution_stability_polls = 3
+        
         # Current tag values
         self._current_values: Dict[str, TagResult] = {}
         
@@ -331,8 +336,14 @@ class MonitorService:
                         timestamp=timestamp
                     )
                     self._active_violations[tag_name] = violation_obj
+                    # Reset normal reading count when violation is detected
+                    if tag_name in self._normal_readings_count:
+                        del self._normal_readings_count[tag_name]
                     logger.info(f"New violation added to _active_violations for '{tag_name}'. Total active violations: {len(self._active_violations)}")
                 else:
+                    # Existing violation - reset normal reading count since we're still violating
+                    if tag_name in self._normal_readings_count:
+                        self._normal_readings_count[tag_name] = 0
                     logger.debug(f"Violation already exists in _active_violations for '{tag_name}'")
             
             # Emit violation event (outside lock)
@@ -374,26 +385,38 @@ class MonitorService:
                 else:
                     logger.debug(f"Auto-remediation not triggered for {tag_name}: unknown reason")
         else:
-            # No violation - check if we need to resolve an existing one
-            should_emit = False
+            # No violation detected - check if we need to resolve an existing one
+            # Require multiple consecutive normal readings before resolving (stability period)
             with self._lock:
                 if tag_name in self._active_violations:
-                    violation_obj = self._active_violations[tag_name]
-                    violation_obj.resolved = True
-                    violation_obj.resolved_at = timestamp
-                    should_emit = True
-            
-            # Emit resolution event (outside lock)
-            if should_emit:
-                self._emit_event(EventType.THRESHOLD_VIOLATION, {
-                    'tag_name': tag_name,
-                    'resolved': True,
-                    'message': f'Threshold violation resolved for {tag_name}'
-                }, Severity.INFO, tag_name)
-                
-                # Remove from active violations after a delay (keep for history)
-                # For now, we'll keep it but mark as resolved
-                logger.info(f"Threshold violation resolved for {tag_name}")
+                    # Increment normal reading count
+                    if tag_name not in self._normal_readings_count:
+                        self._normal_readings_count[tag_name] = 0
+                    self._normal_readings_count[tag_name] += 1
+                    
+                    logger.debug(f"Tag '{tag_name}' has {self._normal_readings_count[tag_name]} consecutive normal readings (need {self._violation_resolution_stability_polls} to resolve)")
+                    
+                    # Only resolve if we have enough consecutive normal readings
+                    if self._normal_readings_count[tag_name] >= self._violation_resolution_stability_polls:
+                        violation_obj = self._active_violations[tag_name]
+                        violation_obj.resolved = True
+                        violation_obj.resolved_at = timestamp
+                        
+                        # Remove from tracking
+                        del self._normal_readings_count[tag_name]
+                        
+                        # Emit resolution event (outside lock)
+                        self._emit_event(EventType.THRESHOLD_VIOLATION, {
+                            'tag_name': tag_name,
+                            'resolved': True,
+                            'message': f'Threshold violation resolved for {tag_name}'
+                        }, Severity.INFO, tag_name)
+                        
+                        logger.info(f"Threshold violation resolved for {tag_name} after {self._violation_resolution_stability_polls} consecutive normal readings")
+                else:
+                    # No active violation, reset normal reading count
+                    if tag_name in self._normal_readings_count:
+                        del self._normal_readings_count[tag_name]
     
     def _emit_event(self, event_type: EventType, data: Dict[str, Any], 
                    severity: Severity, tag_name: Optional[str] = None) -> None:
@@ -494,16 +517,32 @@ class MonitorService:
     def clear_violation(self, tag_name: str) -> None:
         """Clear a violation for a specific tag.
         
+        After clearing, immediately re-check if the current value is still violating.
+        If it is, re-add it as a new violation so it can trigger remediation again.
+        
         Args:
             tag_name: Name of the tag to clear violation for (should be config key, not PLC tag name)
         """
         logger.debug(f"clear_violation called for tag_name='{tag_name}'. Active violations before clear: {list(self._active_violations.keys())}")
+        
         with self._lock:
             if tag_name in self._active_violations:
                 del self._active_violations[tag_name]
+                # Reset normal reading count
+                if tag_name in self._normal_readings_count:
+                    del self._normal_readings_count[tag_name]
                 logger.info(f"Violation cleared for '{tag_name}' after successful remediation. Remaining active violations: {list(self._active_violations.keys())}")
             else:
                 logger.warning(f"Attempted to clear violation for '{tag_name}' but it's not in _active_violations. Active violations: {list(self._active_violations.keys())}")
+        
+        # After clearing, immediately re-check if the current value is still violating
+        # This ensures that if remediation didn't fix the issue, the violation is re-detected
+        if tag_name in self._current_values:
+            current_result = self._current_values[tag_name]
+            if current_result.success:
+                logger.debug(f"Re-checking violation status for '{tag_name}' after clearing (current value: {current_result.value})")
+                # Re-evaluate threshold to see if violation still exists
+                self._evaluate_threshold(tag_name, current_result.value, current_result.timestamp)
     
     def get_statistics(self) -> Dict[str, Any]:
         """Get monitoring statistics.

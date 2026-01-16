@@ -350,14 +350,24 @@ def get_remediation_status():
             return _api_response(False, None, f'Job {job_id} not found', 404)
         
         job = _remediation_jobs[job_id]
+        old_status = job.get('status')
         
         # Update status from AAP if available
         if job.get('aap_job_id') and _aap_client:
             try:
                 aap_status = _aap_client.get_job_status(job['aap_job_id'])
                 if aap_status.get('finished'):
-                    job['status'] = 'successful' if not aap_status.get('failed') else 'failed'
+                    new_status = 'successful' if not aap_status.get('failed') else 'failed'
+                    job['status'] = new_status
                     job['end_time'] = datetime.now().isoformat()
+                    
+                    # Clear violation if job just became successful and has a tag_name
+                    if new_status == 'successful' and old_status != 'successful' and job.get('tag_name') and _monitor:
+                        try:
+                            _monitor.clear_violation(job['tag_name'])
+                            logger.info(f"Cleared violation for {job['tag_name']} after successful remediation job {job_id}")
+                        except Exception as e:
+                            logger.warning(f"Error clearing violation for {job['tag_name']}: {e}")
             except Exception as e:
                 logger.warning(f"Error checking AAP job status: {e}")
         
@@ -366,13 +376,24 @@ def get_remediation_status():
         # Get all jobs - check AAP status for each job
         jobs_list = []
         for job in _remediation_jobs.values():
+            old_status = job.get('status')
+            
             # Update status from AAP if available
             if job.get('aap_job_id') and _aap_client:
                 try:
                     aap_status = _aap_client.get_job_status(job['aap_job_id'])
                     if aap_status.get('finished'):
-                        job['status'] = 'successful' if not aap_status.get('failed') else 'failed'
+                        new_status = 'successful' if not aap_status.get('failed') else 'failed'
+                        job['status'] = new_status
                         job['end_time'] = datetime.now().isoformat()
+                        
+                        # Clear violation if job just became successful and has a tag_name
+                        if new_status == 'successful' and old_status != 'successful' and job.get('tag_name') and _monitor:
+                            try:
+                                _monitor.clear_violation(job['tag_name'])
+                                logger.info(f"Cleared violation for {job['tag_name']} after successful remediation job {job.get('job_id')}")
+                            except Exception as e:
+                                logger.warning(f"Error clearing violation for {job.get('tag_name')}: {e}")
                 except Exception as e:
                     logger.warning(f"Error checking AAP job status for job {job.get('job_id')}: {e}")
             jobs_list.append(job)

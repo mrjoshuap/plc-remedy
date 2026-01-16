@@ -8,6 +8,7 @@ import os
 import sys
 import atexit
 import signal
+from typing import Optional
 from flask import Flask
 from flask_socketio import SocketIO
 
@@ -143,14 +144,19 @@ def create_app():
             monitor_service.set_chaos_hook(chaos_hook)
         
         # Set remediation hook for auto-remediation
-        def remediation_hook(action: str) -> None:
-            """Trigger remediation action (for auto-remediation hook)."""
+        def remediation_hook(action: str, tag_name: Optional[str] = None) -> None:
+            """Trigger remediation action (for auto-remediation hook).
+            
+            Args:
+                action: Action type (stop, reset, restart)
+                tag_name: Optional tag name that triggered the remediation
+            """
             from datetime import datetime
             import uuid
             from app.models import RemediationStatus
             from app.api.routes import _remediation_jobs, _last_remediation_time as api_last_remediation_time
             
-            logger.info(f"Remediation hook called with action: {action}")
+            logger.info(f"Remediation hook called with action: {action}, tag_name: {tag_name}")
             
             if not aap_client:
                 logger.warning("AAP client not available for auto-remediation")
@@ -190,7 +196,8 @@ def create_app():
                     'action_type': action,
                     'status': RemediationStatus.PENDING.value,
                     'start_time': datetime.now().isoformat(),
-                    'aap_job_id': aap_job_id
+                    'aap_job_id': aap_job_id,
+                    'tag_name': tag_name  # Track which tag triggered this remediation
                 }
                 
                 # Add to API routes' remediation jobs dictionary

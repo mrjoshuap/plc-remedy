@@ -77,11 +77,11 @@ class MonitorService:
         """
         self._chaos_hook = hook
     
-    def set_remediation_hook(self, hook: Callable[[str], None]) -> None:
+    def set_remediation_hook(self, hook: Callable[[str, Optional[str]], None]) -> None:
         """Set remediation trigger hook.
         
         Args:
-            hook: Function that takes action type (str) and triggers remediation
+            hook: Function that takes action type (str) and optional tag_name (str) and triggers remediation
         """
         self._remediation_hook = hook
         logger.info("Remediation hook set successfully for auto-remediation")
@@ -343,7 +343,7 @@ class MonitorService:
                     # Default to 'reset' action for auto-remediation
                     # Could be made configurable per tag in the future
                     logger.info(f"Auto-remediation enabled: triggering reset for violation on {tag_name}")
-                    self._remediation_hook('reset')
+                    self._remediation_hook('reset', tag_name)
                     logger.info(f"Auto-remediation hook called successfully for {tag_name}")
                 except Exception as e:
                     logger.error(f"Error triggering auto-remediation: {e}", exc_info=True)
@@ -475,6 +475,17 @@ class MonitorService:
         """
         with self._lock:
             return [v for v in self._active_violations.values() if not v.resolved]
+    
+    def clear_violation(self, tag_name: str) -> None:
+        """Clear a violation for a specific tag.
+        
+        Args:
+            tag_name: Name of the tag to clear violation for
+        """
+        with self._lock:
+            if tag_name in self._active_violations:
+                del self._active_violations[tag_name]
+                logger.info(f"Violation cleared for {tag_name} after successful remediation")
     
     def get_statistics(self) -> Dict[str, Any]:
         """Get monitoring statistics.

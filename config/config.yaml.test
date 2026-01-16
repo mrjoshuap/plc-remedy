@@ -82,7 +82,7 @@ aap:
     gather_metrics: 45
 
 remediation:
-  auto_remediate: false      # Manual trigger only for testing
+  auto_remediate: true      # false = Manual trigger only for testing
   cooldown_seconds: 10       # Shorter cooldown for testing
   max_retries: 3
 

@@ -8,6 +8,7 @@ plc:
   timeout: 5.0
   poll_interval_ms: 1000    # 1 second polling for testing
   mock_mode: true            # Enable graceful handling of unsupported CIP services (Multiple Service Packet, etc.)
+  protocol_mode: "serial"   # Protocol mode (will be overridden by mock_mode anyway)
 
 tags:
   # Light status tag - boolean

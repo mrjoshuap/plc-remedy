@@ -268,7 +268,19 @@ plc:
   slot: 0
   timeout: 5.0
   poll_interval_ms: 1000
+  mock_mode: false              # Set to true when using mock PLC
+  protocol_mode: "serial"       # Protocol mode: "serial" (disable MSP) or "msp" (use pycomm3 default)
+                                # Note: mock_mode always uses "serial" mode regardless of this setting
 ```
+
+**Protocol Mode Options:**
+- `"serial"` (default): Disables Multiple Service Packets (MSP) by forcing Micro800 mode. Use this for:
+  - Mock PLCs (automatically used when `mock_mode: true`)
+  - PLCs that don't support MSP
+  - Compatibility with older PLCs
+- `"msp"`: Uses pycomm3's default protocol logic, allowing MSP for supported PLCs. Use this for:
+  - Modern ControlLogix/CompactLogix PLCs that support MSP
+  - Production environments where MSP can improve performance
 
 #### Tag Monitoring
 ```yaml
@@ -333,7 +345,9 @@ All dependencies are installed via requirements.txt:
 pip install -r requirements.txt
 ```
 
-**Important:** Due to limitations in the cpppo library and pycomm3's protocol handling, the mock PLC must simulate a Micro800 PLC. This is because pycomm3 only disables Multiple Service Packets (MSP) for Micro800 devices, which is necessary since the mock PLC cannot properly handle MSP requests. The application automatically configures pycomm3 to treat the mock PLC as a Micro800 device when in mock mode.
+**Important:** Due to limitations in the cpppo library and pycomm3's protocol handling, the mock PLC must simulate a Micro800 PLC. This is because pycomm3 only disables Multiple Service Packets (MSP) for Micro800 devices, which is necessary since the mock PLC cannot properly handle MSP requests. The application automatically configures pycomm3 to treat the mock PLC as a Micro800 device when `mock_mode: true`, regardless of the `protocol_mode` setting.
+
+For production PLCs, you can set `protocol_mode: "msp"` to use pycomm3's default protocol logic, which allows MSP for supported PLCs and can improve performance. The default `protocol_mode: "serial"` maintains backward compatibility and disables MSP.
 
 See [MOCK_PLC_LIMITATIONS.md](MOCK_PLC_LIMITATIONS.md) for details on mock PLC limitations.
 

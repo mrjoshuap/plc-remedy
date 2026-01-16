@@ -64,12 +64,23 @@ class PLCClient:
                 init_program_tags=init_program_tags
             )
             
-            # In mock mode, force Micro800 behavior to disable Multiple Service Packets
-            # This prevents MSP usage which mock PLCs don't support properly
+            # Determine if we should force Micro800 mode (serial mode, disables MSP)
+            force_micro800 = False
             if self.config.mock_mode:
+                # Mock PLCs always need serial mode (Micro800) to disable MSP
+                force_micro800 = True
+                logger.debug("Forcing Micro800 mode (mock_mode enabled)")
+            elif self.config.protocol_mode == "serial":
+                # User explicitly requested serial mode
+                force_micro800 = True
+                logger.debug("Forcing Micro800 mode (protocol_mode=serial)")
+            else:
+                # protocol_mode == "msp" - use pycomm3 default logic
+                logger.debug("Using pycomm3 default protocol logic (protocol_mode=msp)")
+            
+            if force_micro800:
                 if hasattr(driver, '_micro800'):
                     driver._micro800 = True
-                    logger.debug("Forced Micro800 mode to disable Multiple Service Packets")
                 # Also try to set it via _cfg if available
                 if hasattr(driver, '_cfg'):
                     driver._cfg['micro800'] = True

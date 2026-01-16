@@ -11,7 +11,8 @@ The CIP-compatible mock PLC has the following limitations:
 1. **Multiple Service Packet (MSP) Not Supported**: 
    - pycomm3's LogixDriver may use Multiple Service Packets (MSP) for some operations
    - cpppo's parser cannot properly handle MSP requests
-   - **Workaround**: The mock PLC must simulate a Micro800 PLC because pycomm3 only disables MSP for Micro800 devices. The application automatically configures pycomm3 to treat the mock PLC as a Micro800 device when in mock mode, which prevents MSP usage and allows the mock PLC to work correctly.
+   - **Workaround**: The mock PLC must simulate a Micro800 PLC because pycomm3 only disables MSP for Micro800 devices. The application automatically configures pycomm3 to treat the mock PLC as a Micro800 device when `mock_mode: true`, which prevents MSP usage and allows the mock PLC to work correctly.
+   - **Note**: When `mock_mode: true`, the application always uses serial mode (Micro800) regardless of the `protocol_mode` setting in the configuration.
    - **Status**: With this workaround, basic tag reading/writing works reliably
 
 2. **Get Attributes All for Logix Object**:
@@ -32,9 +33,18 @@ Due to limitations in the cpppo library and pycomm3's protocol handling, the moc
 
 1. **MSP Limitation**: The cpppo library cannot properly parse Multiple Service Packets (MSP) that pycomm3 may send for certain operations
 2. **Micro800 Workaround**: pycomm3 only disables MSP usage for Micro800 devices
-3. **Automatic Configuration**: When the application detects mock mode, it automatically configures pycomm3's LogixDriver to treat the connection as a Micro800 device, which disables MSP and allows the mock PLC to function correctly
+3. **Automatic Configuration**: When the application detects `mock_mode: true`, it automatically configures pycomm3's LogixDriver to treat the connection as a Micro800 device, which disables MSP and allows the mock PLC to function correctly. This happens regardless of the `protocol_mode` setting.
 
-This workaround is transparent to the user - simply enable mock mode in the configuration, and the application handles the Micro800 simulation automatically.
+This workaround is transparent to the user - simply enable `mock_mode: true` in the configuration, and the application handles the Micro800 simulation automatically.
+
+## Protocol Mode Configuration
+
+The application supports two protocol modes via the `protocol_mode` setting:
+
+- **`"serial"` (default)**: Disables MSP by forcing Micro800 mode. This is automatically used when `mock_mode: true`, and is the default for backward compatibility.
+- **`"msp"`**: Uses pycomm3's default protocol logic, allowing MSP for supported PLCs. This can improve performance with modern ControlLogix/CompactLogix PLCs that support MSP.
+
+**Important**: When `mock_mode: true`, the application always uses serial mode (Micro800) regardless of the `protocol_mode` setting, as mock PLCs cannot handle MSP requests. For production PLCs with `mock_mode: false`, you can set `protocol_mode: "msp"` to use pycomm3's default protocol logic if your PLC supports MSP.
 
 ## Solutions
 

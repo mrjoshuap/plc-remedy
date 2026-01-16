@@ -36,6 +36,7 @@ ENV/
 # Configuration (keep example, ignore actual)
 config/config.yaml
 !config/config.yaml.example
+!config/config.yaml.test
 
 # Logs
 *.log

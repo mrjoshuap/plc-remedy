@@ -1,5 +1,6 @@
 """Mock Ansible Automation Platform API server for testing."""
 from flask import Flask, request, jsonify
+from waitress import serve
 import logging
 import random
 import time
@@ -135,4 +136,5 @@ localhost                  : ok=1    changed=0    unreachable=0    failed=0
 
 if __name__ == '__main__':
     logger.info("Starting Mock AAP API server on http://localhost:8080")
-    app.run(host='0.0.0.0', port=8080, debug=True)
+    # Use waitress for better performance and concurrent request handling
+    serve(app, host='0.0.0.0', port=8080, threads=4)

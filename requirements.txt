@@ -10,6 +10,7 @@ cpppo>=4.0.0
 
 # Production server
 gunicorn==21.2.0
+waitress>=2.1.0
 
 # Development dependencies (optional, for testing)
 pytest==7.4.3

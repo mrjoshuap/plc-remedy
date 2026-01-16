@@ -269,36 +269,11 @@
             <div style="margin-bottom: 1rem;">
                 <label>Injection Rate: <span id="injection-rate-value">5%</span></label><br>
                 <input type="range" id="injection-rate" min="0" max="100" value="5" 
-                       oninput="updateInjectionRate(this.value)" style="width: 100%; margin-top: 0.5rem;">
+                oninput="updateInjectionRate(this.value)" style="width: 100%; margin-top: 0.5rem;">
             </div>
             <div class="btn-group">
                 <button class="btn btn-warning" onclick="injectChaos('network_timeout')">Inject Timeout</button>
                 <button class="btn btn-warning" onclick="injectChaos('connection_loss')">Inject Connection Loss</button>
-            </div>
-        </div>
-        
-        <!-- Metrics Charts -->
-        <div class="card full-width">
-            <h2>Metrics Charts</h2>
-            <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));">
-                <div>
-                    <h3>Motor Speed</h3>
-                    <div class="chart-container">
-                        <canvas id="motor-speed-chart"></canvas>
-                    </div>
-                </div>
-                <div>
-                    <h3>Light Status</h3>
-                    <div class="chart-container">
-                        <canvas id="light-status-chart"></canvas>
-                    </div>
-                </div>
-                <div>
-                    <h3>Motor Direction</h3>
-                    <div class="chart-container">
-                        <canvas id="motor-direction-chart"></canvas>
-                    </div>
-                </div>
             </div>
         </div>
         
@@ -338,6 +313,31 @@
                 <h2>Active Violations</h2>
                 <div id="violations-list">
                     <div class="loading">Loading...</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Metrics Charts -->
+        <div class="card full-width">
+            <h2>Metrics Charts</h2>
+            <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));">
+                <div>
+                    <h3>Motor Speed</h3>
+                    <div class="chart-container">
+                        <canvas id="motor-speed-chart"></canvas>
+                    </div>
+                </div>
+                <div>
+                    <h3>Light Status</h3>
+                    <div class="chart-container">
+                        <canvas id="light-status-chart"></canvas>
+                    </div>
+                </div>
+                <div>
+                    <h3>Motor Direction</h3>
+                    <div class="chart-container">
+                        <canvas id="motor-direction-chart"></canvas>
+                    </div>
                 </div>
             </div>
         </div>

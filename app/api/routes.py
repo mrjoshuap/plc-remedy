@@ -22,6 +22,8 @@ _socketio = None
 _remediation_jobs: Dict[str, Dict[str, Any]] = {}
 _last_remediation_time: Dict[str, datetime] = {}  # Per-tag remediation cooldown tracking
 _last_remediation_time_global: Optional[datetime] = None  # Global cooldown for general remediation (no tag)
+_last_job_status_check: Dict[str, datetime] = {}  # Track last time each job was checked (rate limiting)
+JOB_STATUS_CHECK_INTERVAL_SECONDS = 3  # Minimum time between checking the same job
 
 
 def init_api(monitor, aap_client, chaos_engine, config: AppConfig, socketio: SocketIO):
@@ -402,9 +404,100 @@ def get_remediation_status():
         job = _remediation_jobs[job_id]
         old_status = job.get('status')
         
-        # Update status from AAP if available
-        if job.get('aap_job_id') and _aap_client:
+        # Update status from AAP if available (only check if not already finished)
+        current_status = job.get('status')
+        if (job.get('aap_job_id') and _aap_client and 
+            current_status not in ['successful', 'failed']):
+            # Check rate limiting - don't check same job too frequently
+            job_key = job.get('job_id', '')
+            now = datetime.now()
+            should_check = True
+            
+            if job_key in _last_job_status_check:
+                elapsed = (now - _last_job_status_check[job_key]).total_seconds()
+                if elapsed < JOB_STATUS_CHECK_INTERVAL_SECONDS:
+                    should_check = False
+                    logger.debug(f"Skipping status check for job {job_key} (checked {elapsed:.1f}s ago, need {JOB_STATUS_CHECK_INTERVAL_SECONDS}s)")
+            
+            if should_check:
+                try:
+                    _last_job_status_check[job_key] = now
+                    aap_status = _aap_client.get_job_status(job['aap_job_id'])
+                    if aap_status.get('finished'):
+                        new_status = 'successful' if not aap_status.get('failed') else 'failed'
+                        job['status'] = new_status
+                        job['end_time'] = datetime.now().isoformat()
+                        
+                        # Clear violation if job just became successful and has a tag_name
+                        if new_status == 'successful' and old_status != 'successful' and job.get('tag_name') and _monitor:
+                            try:
+                                tag_name = job['tag_name']
+                                logger.info(f"Attempting to clear violation for tag_name='{tag_name}' after successful remediation job {job_id}")
+                                _monitor.clear_violation(tag_name)
+                                logger.info(f"Cleared violation for '{tag_name}' after successful remediation job {job_id}")
+                            except Exception as e:
+                                logger.warning(f"Error clearing violation for {job['tag_name']}: {e}", exc_info=True)
+                except Exception as e:
+                    logger.warning(f"Error checking AAP job status: {e}")
+        
+        return _api_response(True, job)
+    else:
+        # Get all jobs - check AAP status for each job (optimized)
+        jobs_list = []
+        now = datetime.now()
+        
+        # Clean up old cooldown entries (older than 1 hour)
+        tags_to_remove = [
+            tag for tag, last_time in _last_remediation_time.items()
+            if (now - last_time).total_seconds() > 3600
+        ]
+        for tag in tags_to_remove:
+            del _last_remediation_time[tag]
+            logger.debug(f"Cleaned up old cooldown entry for tag '{tag}'")
+        
+        # Clean up old job status check entries (older than 1 hour)
+        job_checks_to_remove = [
+            job_id for job_id, last_check in _last_job_status_check.items()
+            if (now - last_check).total_seconds() > 3600
+        ]
+        for job_id in job_checks_to_remove:
+            del _last_job_status_check[job_id]
+        
+        # Limit how many jobs we check per request to prevent overload
+        MAX_JOBS_TO_CHECK = 10
+        jobs_to_check = []
+        jobs_skipped = 0
+        
+        for job in _remediation_jobs.values():
+            current_status = job.get('status')
+            job_id = job.get('job_id', '')
+            
+            # Only check jobs that are not finished and haven't been checked recently
+            if (job.get('aap_job_id') and _aap_client and 
+                current_status not in ['successful', 'failed'] and
+                len(jobs_to_check) < MAX_JOBS_TO_CHECK):
+                
+                # Check rate limiting
+                should_check = True
+                if job_id in _last_job_status_check:
+                    elapsed = (now - _last_job_status_check[job_id]).total_seconds()
+                    if elapsed < JOB_STATUS_CHECK_INTERVAL_SECONDS:
+                        should_check = False
+                        jobs_skipped += 1
+                
+                if should_check:
+                    jobs_to_check.append(job)
+            else:
+                if current_status in ['successful', 'failed']:
+                    jobs_skipped += 1
+        
+        # Check status for selected jobs
+        for job in jobs_to_check:
+            old_status = job.get('status')
+            job_id = job.get('job_id', '')
+            
             try:
+                _last_job_status_check[job_id] = now
                 aap_status = _aap_client.get_job_status(job['aap_job_id'])
                 if aap_status.get('finished'):
                     new_status = 'successful' if not aap_status.get('failed') else 'failed'
@@ -419,49 +512,16 @@ def get_remediation_status():
                             _monitor.clear_violation(tag_name)
                             logger.info(f"Cleared violation for '{tag_name}' after successful remediation job {job_id}")
                         except Exception as e:
-                            logger.warning(f"Error clearing violation for {job['tag_name']}: {e}", exc_info=True)
+                            logger.warning(f"Error clearing violation for {job.get('tag_name')}: {e}", exc_info=True)
             except Exception as e:
-                logger.warning(f"Error checking AAP job status: {e}")
+                logger.warning(f"Error checking AAP job status for job {job_id}: {e}")
         
-        return _api_response(True, job)
-    else:
-        # Get all jobs - check AAP status for each job
-        jobs_list = []
-        
-        # Clean up old cooldown entries (older than 1 hour)
-        now = datetime.now()
-        tags_to_remove = [
-            tag for tag, last_time in _last_remediation_time.items()
-            if (now - last_time).total_seconds() > 3600
-        ]
-        for tag in tags_to_remove:
-            del _last_remediation_time[tag]
-            logger.debug(f"Cleaned up old cooldown entry for tag '{tag}'")
-        
+        # Add all jobs to response (including ones we didn't check)
         for job in _remediation_jobs.values():
-            old_status = job.get('status')
-            
-            # Update status from AAP if available
-            if job.get('aap_job_id') and _aap_client:
-                try:
-                    aap_status = _aap_client.get_job_status(job['aap_job_id'])
-                    if aap_status.get('finished'):
-                        new_status = 'successful' if not aap_status.get('failed') else 'failed'
-                        job['status'] = new_status
-                        job['end_time'] = datetime.now().isoformat()
-                        
-                        # Clear violation if job just became successful and has a tag_name
-                        if new_status == 'successful' and old_status != 'successful' and job.get('tag_name') and _monitor:
-                            try:
-                                tag_name = job['tag_name']
-                                logger.info(f"Attempting to clear violation for tag_name='{tag_name}' after successful remediation job {job.get('job_id')}")
-                                _monitor.clear_violation(tag_name)
-                                logger.info(f"Cleared violation for '{tag_name}' after successful remediation job {job.get('job_id')}")
-                            except Exception as e:
-                                logger.warning(f"Error clearing violation for {job.get('tag_name')}: {e}", exc_info=True)
-                except Exception as e:
-                    logger.warning(f"Error checking AAP job status for job {job.get('job_id')}: {e}")
             jobs_list.append(job)
+        
+        if jobs_skipped > 0 or len(jobs_to_check) < len([j for j in _remediation_jobs.values() if j.get('status') not in ['successful', 'failed']]):
+            logger.debug(f"Status check: checked {len(jobs_to_check)} jobs, skipped {jobs_skipped} (finished or rate-limited)")
         
         return _api_response(True, {
             'jobs': jobs_list,

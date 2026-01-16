@@ -97,7 +97,7 @@ print_info "Starting test components in tmux session '$SESSION_NAME'..."
 # Create new tmux session in detached mode
 # Start with the mock PLC in the first pane
 tmux new-session -d -s "$SESSION_NAME" -x 120 -y 40 \
-    "$PYTHON_CMD mock/cip_plc.py --ip 127.0.0.1 --port 44818 --mode normal"
+    "$PYTHON_CMD mock/cip_plc.py --ip 127.0.0.1 --port 44818 --mode normal -v"
 
 # Set pane title for pane 0 (Mock PLC)
 tmux select-pane -t "$SESSION_NAME:0.0" -T "Mock PLC"

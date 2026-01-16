@@ -1096,12 +1096,12 @@
             }
         }
         
-        // Poll for updates
+        // Poll for updates (reduced frequency to reduce load)
         setInterval(() => {
             updateViolations();
             updateAAPJobs();
             updateConnectionStatsPeriodic();
-        }, 5000);
+        }, 8000);  // Increased from 5s to 8s for AAP jobs and violations
     </script>
 </body>
 </html>

@@ -358,11 +358,13 @@ class PLCClient:
                 try:
                     result = driver.read(tag_name)
                     read_duration = time.time() - read_start_time
-                    if read_duration > 2.0:  # Log if read takes more than 2 seconds
-                        logger.warning(f"PLC read for '{tag_name}' took {read_duration:.2f} seconds (slow)")
+                    if read_duration > 0.5:  # Log if read takes more than 500ms
+                        logger.warning(f"PLC read for '{tag_name}' took {read_duration:.3f} seconds (slow, >500ms)")
+                    elif read_duration > 0.2:  # Log if read takes more than 200ms (moderate)
+                        logger.debug(f"PLC read for '{tag_name}' took {read_duration:.3f} seconds")
                 except Exception as read_error:
                     read_duration = time.time() - read_start_time
-                    logger.error(f"PLC read for '{tag_name}' failed after {read_duration:.2f} seconds: {read_error}")
+                    logger.error(f"PLC read for '{tag_name}' failed after {read_duration:.3f} seconds: {read_error}")
                     raise
                 
                 # Update statistics INSIDE the lock
@@ -476,12 +478,17 @@ class PLCClient:
         # Read tags sequentially to avoid overwhelming the PLC
         # The read_lock in read_tag() ensures only one read happens at a time
         # This also avoids Multiple Service Packets, which some mock PLCs don't support properly
-        for tag_name in tag_names:
+        for i, tag_name in enumerate(tag_names):
             logger.debug(f"Reading tag: {tag_name}")
             result = self.read_tag(tag_name)
             # Use the tag_name from the result (which should match the input)
             results[result.tag_name] = result
             logger.debug(f"Stored result for {result.tag_name}: success={result.success}, value={result.value if result.success else result.error}")
+            
+            # Small delay between reads to prevent overwhelming the PLC
+            # Only delay if there are more tags to read
+            if i < len(tag_names) - 1:  # Don't delay after the last tag
+                time.sleep(0.05)  # 50ms delay between reads
         
         logger.debug(f"read_tags returning {len(results)} results: {list(results.keys())}")
         return results

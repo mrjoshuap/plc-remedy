@@ -59,6 +59,12 @@ class MonitorService:
         self._normal_readings_count: Dict[str, int] = {}
         self._violation_resolution_stability_polls = 3
         
+        # Adaptive polling: track performance and adjust poll interval
+        self._last_poll_duration = 0.0
+        self._slow_poll_count = 0
+        self._base_poll_interval = config.plc.poll_interval_ms / 1000.0
+        self._current_poll_interval = self._base_poll_interval
+        
         # Current tag values
         self._current_values: Dict[str, TagResult] = {}
         
@@ -142,23 +148,45 @@ class MonitorService:
     
     def _monitor_loop(self) -> None:
         """Main monitoring loop."""
-        poll_interval = self.config.plc.poll_interval_ms / 1000.0
-        
         while self._running:
             try:
+                poll_start = time.time()
                 self._poll_cycle()
+                poll_duration = time.time() - poll_start
+                self._last_poll_duration = poll_duration
+                
+                # Adaptive polling: adjust interval based on performance
+                if poll_duration > 1.0:  # Poll took longer than 1 second
+                    self._slow_poll_count += 1
+                    logger.warning(f"Poll cycle took {poll_duration:.2f}s (slow, count: {self._slow_poll_count})")
+                else:
+                    # Gradually reduce slow_poll_count if polls are fast
+                    self._slow_poll_count = max(0, self._slow_poll_count - 1)
+                
+                # Adjust poll interval based on performance
+                if self._slow_poll_count > 3:
+                    # Slow down polling if consistently slow
+                    self._current_poll_interval = min(self._current_poll_interval * 1.5, 5.0)  # Max 5 seconds
+                    logger.info(f"Adaptive polling: slowing down to {self._current_poll_interval:.2f}s (slow_poll_count: {self._slow_poll_count})")
+                elif self._slow_poll_count == 0 and self._current_poll_interval > self._base_poll_interval:
+                    # Speed up if polls are fast again
+                    self._current_poll_interval = max(self._base_poll_interval, self._current_poll_interval * 0.9)
+                    if self._current_poll_interval <= self._base_poll_interval:
+                        logger.info(f"Adaptive polling: returning to base interval {self._base_poll_interval:.2f}s")
+                
             except Exception as e:
                 logger.error(f"Error in monitor loop: {e}", exc_info=True)
             
-            # Sleep until next poll
+            # Sleep until next poll using adaptive interval
             # Use eventlet.sleep if available to avoid blocking HTTP requests
             if EVENTLET_AVAILABLE:
-                eventlet.sleep(poll_interval)
+                eventlet.sleep(self._current_poll_interval)
             else:
-                time.sleep(poll_interval)
+                time.sleep(self._current_poll_interval)
     
     def _poll_cycle(self) -> None:
         """Execute one polling cycle."""
+        poll_cycle_start = time.time()
         results = {}  # Initialize results to empty dict in case of early return
         tag_mapping = {}  # Maps config key -> actual PLC tag name
         
@@ -288,6 +316,13 @@ class MonitorService:
         for event_type, data, severity, tag_name in events_to_emit:
             logger.debug(f"Emitting {event_type.value} event for {tag_name} with data: {data}")
             self._emit_event(event_type, data, severity, tag_name)
+        
+        # Log poll cycle performance
+        poll_cycle_duration = time.time() - poll_cycle_start
+        if poll_cycle_duration > 1.0:  # Log if poll cycle takes more than 1 second
+            logger.warning(f"Poll cycle took {poll_cycle_duration:.3f} seconds (slow, >1s)")
+        elif poll_cycle_duration > 0.5:  # Log if poll cycle takes more than 500ms (moderate)
+            logger.debug(f"Poll cycle took {poll_cycle_duration:.3f} seconds")
     
     def _evaluate_threshold(self, tag_name: str, value: Any, timestamp: datetime) -> None:
         """Evaluate tag value against failure conditions.

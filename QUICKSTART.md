@@ -3,11 +3,49 @@
 ## Prerequisites Check
 
 - [ ] Python 3.10+ installed
+- [ ] Conda installed (recommended) or Python venv available
 - [ ] Network access to PLC (or use mock PLC)
 - [ ] Configuration file created
 - [ ] tmux installed (for testing with wrapper script - optional but recommended)
 
 ## 5-Minute Setup
+
+0. **Install Conda (if not already installed):**
+
+If you don't have conda installed, install it using one of the methods below. For detailed instructions, see the [Installing Conda section in README.md](README.md#installing-conda).
+
+**macOS:**
+```bash
+# Option 1: Using Homebrew (Recommended)
+brew install miniconda
+conda init "$(basename "$SHELL")"
+source ~/.zshrc  # or ~/.bash_profile
+
+# Option 2: Download and install Miniconda
+curl -O https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-x86_64.sh
+bash Miniconda3-latest-MacOSX-x86_64.sh
+```
+
+**Ubuntu/Debian:**
+```bash
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+chmod +x Miniconda3-latest-Linux-x86_64.sh
+bash Miniconda3-latest-Linux-x86_64.sh
+source ~/.bashrc
+```
+
+**RHEL/CentOS:**
+```bash
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+chmod +x Miniconda3-latest-Linux-x86_64.sh
+bash Miniconda3-latest-Linux-x86_64.sh
+source ~/.bashrc
+```
+
+**Verify installation:**
+```bash
+conda --version
+```
 
 1. **Set up Python environment (Recommended: Conda):**
 
@@ -114,6 +152,13 @@ python mock/cip_plc.py --ip 127.0.0.1 --port 44818 --mode degraded
 - Verify config.yaml syntax (use a YAML validator)
 - Check that all required fields are present
 - Ensure environment variables are set if using `${VAR}` syntax
+
+### "conda: command not found"
+- Ensure conda is installed (see step 0 above)
+- Initialize conda for your shell: `conda init "$(basename "$SHELL")"`
+- Reload your shell: `source ~/.zshrc` (zsh) or `source ~/.bashrc` (bash)
+- Restart your terminal
+- Verify: `conda --version`
 
 ### "tmux not found" (when using wrapper script)
 - Install tmux: `brew install tmux` (macOS) or `sudo apt-get install tmux` (Linux)

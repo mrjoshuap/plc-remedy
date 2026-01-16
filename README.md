@@ -39,6 +39,155 @@ This project implements the research described in SAE Paper "From Reactive to Pr
 
 ## Installation
 
+### Installing Conda
+
+Conda is the recommended Python environment manager for this project. If you don't have conda installed, follow the instructions below for your platform.
+
+#### macOS
+
+**Option 1: Using Homebrew (Recommended)**
+```bash
+# Install Miniconda via Homebrew
+brew install miniconda
+
+# Initialize conda for your shell (usually zsh or bash)
+conda init "$(basename "$SHELL")"
+
+# Restart your terminal or reload shell configuration
+source ~/.zshrc  # or ~/.bash_profile for bash
+```
+
+**Option 2: Using Miniconda Installer**
+```bash
+# Download Miniconda installer
+curl -O https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-x86_64.sh
+
+# Run installer
+bash Miniconda3-latest-MacOSX-x86_64.sh
+
+# Follow the prompts, then restart your terminal
+# Initialize conda
+conda init "$(basename "$SHELL")"
+source ~/.zshrc  # or ~/.bash_profile
+```
+
+**Option 3: Using Anaconda Installer**
+Download the Anaconda installer from [anaconda.com](https://www.anaconda.com/products/distribution) and follow the installation wizard.
+
+**Verification:**
+```bash
+conda --version
+# Should display: conda 23.x.x (or similar)
+```
+
+#### Ubuntu/Debian
+
+**Using Miniconda Installer (Recommended)**
+```bash
+# Download Miniconda installer for Linux
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+
+# Make installer executable
+chmod +x Miniconda3-latest-Linux-x86_64.sh
+
+# Run installer
+bash Miniconda3-latest-Linux-x86_64.sh
+
+# Follow the prompts (accept license, choose installation location)
+# When asked, choose "yes" to initialize conda
+
+# Reload shell configuration
+source ~/.bashrc  # or ~/.zshrc if using zsh
+```
+
+**Alternative: Using Anaconda Installer**
+```bash
+# Download Anaconda installer
+wget https://repo.anaconda.com/archive/Anaconda3-latest-Linux-x86_64.sh
+
+# Make executable and run
+chmod +x Anaconda3-latest-Linux-x86_64.sh
+bash Anaconda3-latest-Linux-x86_64.sh
+
+# Initialize conda
+source ~/.bashrc
+```
+
+**Verification:**
+```bash
+conda --version
+# Should display: conda 23.x.x (or similar)
+```
+
+**Note:** If conda is not found after installation, you may need to manually initialize it:
+```bash
+# For bash
+echo 'eval "$(/path/to/miniconda3/bin/conda shell.bash hook)"' >> ~/.bashrc
+source ~/.bashrc
+
+# For zsh
+echo 'eval "$(/path/to/miniconda3/bin/conda shell.zsh hook)"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+#### RHEL/CentOS
+
+**Using Miniconda Installer (Recommended)**
+```bash
+# Download Miniconda installer for Linux
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+
+# Make installer executable
+chmod +x Miniconda3-latest-Linux-x86_64.sh
+
+# Run installer
+bash Miniconda3-latest-Linux-x86_64.sh
+
+# Follow the prompts (accept license, choose installation location)
+# When asked, choose "yes" to initialize conda
+
+# Reload shell configuration
+source ~/.bashrc  # or ~/.zshrc if using zsh
+```
+
+**Alternative: Using Anaconda Installer**
+```bash
+# Download Anaconda installer
+wget https://repo.anaconda.com/archive/Anaconda3-latest-Linux-x86_64.sh
+
+# Make executable and run
+chmod +x Anaconda3-latest-Linux-x86_64.sh
+bash Anaconda3-latest-Linux-x86_64.sh
+
+# Initialize conda
+source ~/.bashrc
+```
+
+**Verification:**
+```bash
+conda --version
+# Should display: conda 23.x.x (or similar)
+```
+
+**Note:** If conda is not found after installation, you may need to manually initialize it:
+```bash
+# For bash
+echo 'eval "$(/path/to/miniconda3/bin/conda shell.bash hook)"' >> ~/.bashrc
+source ~/.bashrc
+
+# For zsh
+echo 'eval "$(/path/to/miniconda3/bin/conda shell.zsh hook)"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+#### Additional Resources
+
+- [Conda Documentation](https://docs.conda.io/)
+- [Miniconda Installation Guide](https://docs.conda.io/en/latest/miniconda.html)
+- [Anaconda Installation Guide](https://docs.anaconda.com/anaconda/install/)
+
+**Note:** If you prefer not to use conda, you can use Python's built-in `venv` module as an alternative (see Option B in the Local Development section below).
+
 ### Local Development
 
 1. Clone the repository:

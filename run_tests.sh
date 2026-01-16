@@ -101,7 +101,6 @@ tmux new-session -d -s "$SESSION_NAME" -x 120 -y 40 \
 
 # Set pane title for pane 0 (Mock PLC)
 tmux select-pane -t "$SESSION_NAME:0.0" -T "Mock PLC"
-sleep 5
 
 # Split window vertically to create second pane (Mock AAP)
 tmux split-window -v -t "$SESSION_NAME:0.0" \
@@ -109,7 +108,7 @@ tmux split-window -v -t "$SESSION_NAME:0.0" \
 
 # Set pane title for pane 1 (Mock AAP)
 tmux select-pane -t "$SESSION_NAME:0.1" -T "Mock AAP"
-sleep 5
+sleep 2
 
 # Split the bottom pane (pane 1) vertically to create third pane (Main App)
 tmux split-window -v -t "$SESSION_NAME:0.1" \

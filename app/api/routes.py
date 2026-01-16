@@ -20,7 +20,8 @@ _socketio = None
 
 # Remediation job tracking
 _remediation_jobs: Dict[str, Dict[str, Any]] = {}
-_last_remediation_time: Optional[datetime] = None
+_last_remediation_time: Dict[str, datetime] = {}  # Per-tag remediation cooldown tracking
+_last_remediation_time_global: Optional[datetime] = None  # Global cooldown for general remediation (no tag)
 
 
 def init_api(monitor, aap_client, chaos_engine, config: AppConfig, socketio: SocketIO):
@@ -265,6 +266,41 @@ def remediate_restart():
     return _trigger_remediation('restart', tag_name=tag_name)
 
 
+def _is_tag_in_remediation_cooldown(tag_name: Optional[str]) -> tuple:
+    """Check if a tag (or global) is in remediation cooldown.
+    
+    Args:
+        tag_name: Tag name to check, or None for global cooldown
+        
+    Returns:
+        Tuple of (is_in_cooldown, remaining_seconds)
+    """
+    global _last_remediation_time, _last_remediation_time_global
+    
+    if not _config:
+        return (False, 0.0)
+    
+    cooldown = _config.remediation.cooldown_seconds
+    now = datetime.now()
+    
+    if tag_name:
+        # Check per-tag cooldown
+        if tag_name in _last_remediation_time:
+            elapsed = (now - _last_remediation_time[tag_name]).total_seconds()
+            if elapsed < cooldown:
+                remaining = cooldown - elapsed
+                return (True, remaining)
+    else:
+        # Check global cooldown for general remediation
+        if _last_remediation_time_global:
+            elapsed = (now - _last_remediation_time_global).total_seconds()
+            if elapsed < cooldown:
+                remaining = cooldown - elapsed
+                return (True, remaining)
+    
+    return (False, 0.0)
+
+
 def _trigger_remediation(action: str, tag_name: Optional[str] = None) -> tuple:
     """Internal function to trigger remediation.
     
@@ -275,7 +311,7 @@ def _trigger_remediation(action: str, tag_name: Optional[str] = None) -> tuple:
     Returns:
         API response tuple
     """
-    global _last_remediation_time
+    global _last_remediation_time, _last_remediation_time_global
     
     if not _aap_client:
         return _api_response(False, None, 'AAP client not initialized', 503)
@@ -283,17 +319,15 @@ def _trigger_remediation(action: str, tag_name: Optional[str] = None) -> tuple:
     if not _config:
         return _api_response(False, None, 'Configuration not loaded', 503)
     
-    # Check cooldown
-    if _last_remediation_time:
-        cooldown = _config.remediation.cooldown_seconds
-        elapsed = (datetime.now() - _last_remediation_time).total_seconds()
-        if elapsed < cooldown:
-            remaining = cooldown - elapsed
-            return _api_response(
-                False, None,
-                f'Remediation cooldown active. Wait {remaining:.1f} more seconds.',
-                429
-            )
+    # Check cooldown (per-tag or global)
+    is_in_cooldown, remaining = _is_tag_in_remediation_cooldown(tag_name)
+    if is_in_cooldown:
+        cooldown_type = f"tag '{tag_name}'" if tag_name else "global"
+        return _api_response(
+            False, None,
+            f'Remediation cooldown active for {cooldown_type}. Wait {remaining:.1f} more seconds.',
+            429
+        )
     
     # Get job template ID
     template_key = f'emergency_{action}'
@@ -323,7 +357,15 @@ def _trigger_remediation(action: str, tag_name: Optional[str] = None) -> tuple:
         }
         
         _remediation_jobs[job_id] = remediation_job
-        _last_remediation_time = datetime.now()
+        
+        # Update cooldown (per-tag or global)
+        now = datetime.now()
+        if tag_name:
+            _last_remediation_time[tag_name] = now
+            logger.debug(f"Updated per-tag cooldown for '{tag_name}'")
+        else:
+            _last_remediation_time_global = now
+            logger.debug("Updated global remediation cooldown")
         
         # Emit event
         if _socketio:
@@ -385,6 +427,17 @@ def get_remediation_status():
     else:
         # Get all jobs - check AAP status for each job
         jobs_list = []
+        
+        # Clean up old cooldown entries (older than 1 hour)
+        now = datetime.now()
+        tags_to_remove = [
+            tag for tag, last_time in _last_remediation_time.items()
+            if (now - last_time).total_seconds() > 3600
+        ]
+        for tag in tags_to_remove:
+            del _last_remediation_time[tag]
+            logger.debug(f"Cleaned up old cooldown entry for tag '{tag}'")
+        
         for job in _remediation_jobs.values():
             old_status = job.get('status')
             

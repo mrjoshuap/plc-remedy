@@ -293,9 +293,11 @@ if __name__ == '__main__':
     init_thread = threading.Thread(target=initialize_background, daemon=True)
     init_thread.start()
     
-    # Use debug=False to prevent reloader from restarting and disconnecting PLC
-    # Set use_reloader=False explicitly to avoid connection issues
-    socketio.run(app, host='0.0.0.0', port=15000, debug=False, use_reloader=False)
+    # Use eventlet WSGI server directly for better concurrency
+    # This prevents blocking that causes the dashboard and monitor service to freeze
+    import eventlet.wsgi
+    logger.info("Starting eventlet WSGI server on 0.0.0.0:15000")
+    eventlet.wsgi.server(eventlet.listen(('0.0.0.0', 15000)), app, log_output=False)
 else:
     # Production mode - gunicorn will call create_app()
     logger.info("Application initialized for production (gunicorn)")

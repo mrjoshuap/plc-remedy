@@ -40,6 +40,24 @@ if [ ! -f "run.py" ] || [ ! -d "mock" ]; then
     exit 1
 fi
 
+# Check if config/config.yaml exists
+if [ ! -f "config/config.yaml" ]; then
+    print_error "config/config.yaml does not exist. Please create it first."
+    exit 1
+fi
+
+# Check if conda plc-remedy environment exists
+if ! conda env list | grep -q "plc-remedy"; then
+    print_error "conda plc-remedy environment does not exist. Please create it first."
+    exit 1
+fi
+
+# Check if conda plc-remedy environment is active (CONDA_DEFAULT_ENV is set to plc-remedy)
+if ! test "$CONDA_DEFAULT_ENV" = "plc-remedy"; then
+    print_error "conda plc-remedy environment is not active. Please activate it first."
+    exit 1
+fi
+
 # Check if Python is available
 if ! command -v python &> /dev/null && ! command -v python3 &> /dev/null; then
     print_error "Python is not installed or not in PATH"

@@ -686,17 +686,40 @@
                 const row = document.createElement('tr');
                 // Find the config entry where the 'name' field matches the tagName
                 // tagConfig is keyed by config keys (e.g., "motor_speed"), but tagName is the PLC tag name (e.g., "Motor_Speed")
-                let nominal = '-';
-                for (const [configKey, tagData] of Object.entries(tagConfig)) {
-                    if (tagData && tagData.name === tagName) {
-                        nominal = tagData.nominal !== undefined ? tagData.nominal : '-';
+                let tagData = null;
+                for (const [configKey, data] of Object.entries(tagConfig)) {
+                    if (data && data.name === tagName) {
+                        tagData = data;
                         break;
                     }
                 }
                 // Fallback: try direct lookup in case tagName matches a config key
-                if (nominal === '-' && tagConfig[tagName] && tagConfig[tagName].nominal !== undefined) {
-                    nominal = tagConfig[tagName].nominal;
+                if (!tagData && tagConfig[tagName]) {
+                    tagData = tagConfig[tagName];
                 }
+                
+                // Format nominal value based on failure condition and thresholds
+                let nominal = '-';
+                if (tagData) {
+                    const failureCondition = tagData.failure_condition;
+                    const thresholdLow = tagData.failure_threshold_low;
+                    const thresholdHigh = tagData.failure_threshold_high;
+                    
+                    if (failureCondition === 'outside_range' && thresholdLow != null && thresholdHigh != null) {
+                        // Display as range: "1500-2000"
+                        nominal = `${thresholdLow}-${thresholdHigh}`;
+                    } else if (failureCondition === 'below' && thresholdLow != null) {
+                        // Display as: "> 1500" (value must be above threshold)
+                        nominal = `> ${thresholdLow}`;
+                    } else if (failureCondition === 'above' && thresholdHigh != null) {
+                        // Display as: "< 2000" (value must be below threshold)
+                        nominal = `< ${thresholdHigh}`;
+                    } else if (tagData.nominal !== undefined) {
+                        // Display nominal value for single-value conditions
+                        nominal = tagData.nominal;
+                    }
+                }
+                
                 const status = result.success ? 'OK' : 'ERROR';
                 const badgeClass = result.success ? 'badge-success' : 'badge-error';
                 

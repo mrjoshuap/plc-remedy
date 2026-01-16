@@ -451,7 +451,10 @@ def get_config():
                 'name': tag.name,
                 'type': tag.type,
                 'nominal': tag.nominal,
-                'failure_condition': tag.failure_condition
+                'failure_condition': tag.failure_condition,
+                'failure_value': tag.failure_value,
+                'failure_threshold_low': tag.failure_threshold_low,
+                'failure_threshold_high': tag.failure_threshold_high
             }
             for tag_name, tag in _config.tags.items()
         },

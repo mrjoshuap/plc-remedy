@@ -128,6 +128,7 @@ def create_app():
         
         # Initialize AAP client
         logger.info("Initializing AAP client...")
+        logger.info(f"AAP configuration: enabled={config.aap.enabled}, mock_mode={config.aap.mock_mode}, base_url={config.aap.base_url or 'not set (will use local simulation)'}")
         aap_client = AAPClient(config.aap)
         
         # Initialize chaos engine
@@ -157,9 +158,14 @@ def create_app():
             from app.api.routes import _remediation_jobs, _is_tag_in_remediation_cooldown
             
             logger.info(f"Remediation hook called with action: {action}, tag_name: {tag_name} (type: {type(tag_name).__name__})")
+            logger.info(f"AAP client available: {aap_client is not None}, enabled: {config.aap.enabled if aap_client else False}")
             
             if not aap_client:
                 logger.warning("AAP client not available for auto-remediation")
+                return
+            
+            if not config.aap.enabled:
+                logger.warning("AAP is disabled in configuration, skipping remediation")
                 return
             
             # Check per-tag cooldown

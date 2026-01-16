@@ -418,11 +418,15 @@ class MonitorService:
             
             logger.warning(f"Threshold violation detected for {tag_name}: {violation_reason}")
             
-            # Debug logging for auto-remediation conditions
-            logger.debug(f"Auto-remediation check for {tag_name}:")
-            logger.debug(f"  - is_new_violation: {is_new_violation}")
-            logger.debug(f"  - auto_remediate config: {self.config.remediation.auto_remediate}")
-            logger.debug(f"  - remediation_hook set: {self._remediation_hook is not None}")
+            # Log violation detection at INFO level for new violations
+            if is_new_violation:
+                logger.info(f"New violation detected for {tag_name}: {violation_reason}")
+            
+            # INFO level logging for auto-remediation conditions
+            logger.info(f"Auto-remediation check for {tag_name}:")
+            logger.info(f"  - is_new_violation: {is_new_violation}")
+            logger.info(f"  - auto_remediate config: {self.config.remediation.auto_remediate}")
+            logger.info(f"  - remediation_hook set: {self._remediation_hook is not None}")
             
             # Trigger auto-remediation if enabled and this is a new violation
             if is_new_violation and self.config.remediation.auto_remediate and self._remediation_hook:
@@ -435,16 +439,16 @@ class MonitorService:
                 except Exception as e:
                     logger.error(f"Error triggering auto-remediation: {e}", exc_info=True)
             elif is_new_violation:
-                # Log why auto-remediation didn't trigger (only for new violations)
+                # Log why auto-remediation didn't trigger (only for new violations) at INFO level
                 reasons = []
                 if not self.config.remediation.auto_remediate:
                     reasons.append("auto_remediate is False")
                 if not self._remediation_hook:
                     reasons.append("remediation hook not set")
                 if reasons:
-                    logger.debug(f"Auto-remediation not triggered for {tag_name}: {', '.join(reasons)}")
+                    logger.info(f"Auto-remediation not triggered for {tag_name}: {', '.join(reasons)}")
                 else:
-                    logger.debug(f"Auto-remediation not triggered for {tag_name}: unknown reason")
+                    logger.info(f"Auto-remediation not triggered for {tag_name}: unknown reason")
         else:
             # No violation detected - check if we need to resolve an existing one
             # Require multiple consecutive normal readings before resolving (stability period)

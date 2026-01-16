@@ -70,7 +70,7 @@ class PLCClient:
                     driver._micro800 = True
                 if hasattr(driver, '_cfg'):
                     driver._cfg['micro800'] = True
-                logger.debug("Set Micro800 override (mock_mode enabled)")
+                logger.info("Set Micro800 override (mock_mode enabled)")
             
             # Determine protocol mode behavior
             if self.config.protocol_mode == "serial":
@@ -79,10 +79,10 @@ class PLCClient:
                     driver._micro800 = True
                 if hasattr(driver, '_cfg'):
                     driver._cfg['micro800'] = True
-                logger.debug("Forcing Micro800 mode (protocol_mode=serial, using serial methods)")
+                logger.info("Forcing Micro800 mode (protocol_mode=serial, using serial methods)")
             else:
                 # protocol_mode == "default" - use pycomm3 default logic
-                logger.debug("Using pycomm3 default protocol logic (protocol_mode=default)")
+                logger.info(f"Using pycomm3 default protocol logic (protocol_mode=default, mock_mode={self.config.mock_mode})")
             
             # Open connection (this is a blocking network operation)
             driver.open()
@@ -99,7 +99,7 @@ class PLCClient:
                     self._stats.connected = True
                     self._stats.connection_start_time = datetime.now()
                     self._stats.last_successful_read = datetime.now()
-                    logger.info(f"Successfully connected to PLC at {self.config.ip_address}")
+                    logger.info(f"Successfully connected to PLC at {self.config.ip_address} (protocol_mode={self.config.protocol_mode}, mock_mode={self.config.mock_mode})")
                     return True
                 else:
                     logger.error("Failed to connect to PLC: driver reports not connected")

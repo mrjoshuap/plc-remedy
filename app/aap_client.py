@@ -52,6 +52,12 @@ class AAPClient:
             self._session.headers.update({
                 'Content-Type': 'application/json'
             })
+        
+        # Log AAP client configuration
+        if config.base_url:
+            logger.info(f"AAP client configured: base_url={config.base_url}, mock_mode={config.mock_mode}, using HTTP requests")
+        else:
+            logger.info(f"AAP client configured: base_url not set, mock_mode={config.mock_mode}, using local simulation")
     
     def launch_job(self, job_template_id: int, extra_vars: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Launch an AAP job template.
@@ -69,8 +75,10 @@ class AAPClient:
         # Use HTTP requests if base_url is configured (even in mock_mode for mock server)
         # Only use local simulation if no base_url is set
         if self.config.base_url:
+            logger.info(f"Launching AAP job template {job_template_id} via HTTP (base_url={self.config.base_url})")
             return self._launch_real_job(job_template_id, extra_vars)
         else:
+            logger.info(f"Launching AAP job template {job_template_id} via local simulation (base_url not set)")
             return self._launch_mock_job(job_template_id, extra_vars)
     
     def _launch_real_job(self, job_template_id: int, extra_vars: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:

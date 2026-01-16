@@ -42,8 +42,8 @@ This project implements the research described in SAE Paper "From Reactive to Pr
 
 1. Clone the repository:
 ```bash
-git clone <repository-url>
-cd wcx-plc-autoremediation
+git clone https://github.com/mrjoshuap/plc-remedy.git
+cd plc-remedy
 ```
 
 2. **Set up Python environment (Recommended: Conda):**

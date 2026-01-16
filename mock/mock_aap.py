@@ -1,8 +1,15 @@
 """Mock Ansible Automation Platform API server for testing."""
 from flask import Flask, request, jsonify
+import logging
 import random
 import time
 from datetime import datetime
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -94,5 +101,5 @@ localhost                  : ok=1    changed=0    unreachable=0    failed=0
 
 
 if __name__ == '__main__':
-    print("Starting Mock AAP API server on http://localhost:8080")
+    logger.info("Starting Mock AAP API server on http://localhost:8080")
     app.run(host='0.0.0.0', port=8080, debug=True)

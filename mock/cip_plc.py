@@ -1,6 +1,5 @@
 """Full CIP protocol-compatible PLC simulator using cpppo."""
 import argparse
-import json
 import logging
 import os
 import threading
@@ -13,7 +12,7 @@ try:
     CPPPO_AVAILABLE = True
 except ImportError:
     CPPPO_AVAILABLE = False
-    logging.warning("cpppo not available. Install with: pip install cpppo")
+    logging.warning("cpppo not available. Please install dependencies from requirements.txt")
 
 try:
     from mock.tag_manager import TagManager, OperatingMode
@@ -55,12 +54,6 @@ class ModeAwareAttribute(device.Attribute):
             *args: Positional arguments (cpppo may pass parser as first arg)
             **kwargs: Keyword arguments containing 'name' and 'type_cls'
         """
-        # #region agent log
-        log_path = "/Users/mrjoshuap/Development/wcx-plc-autoremediation/.cursor/debug.log"
-        with open(log_path, "a") as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"cip_plc.py:48","message":"ModeAwareAttribute __init__ entry","data":{"args_count":len(args),"kwargs_keys":list(kwargs.keys()),"tag_manager_available":_global_tag_manager is not None},"timestamp":int(time.time()*1000)}) + "\n")
-        # #endregion
-        
         # Extract name from kwargs (cpppo passes it as keyword argument)
         name = kwargs.pop('name', None)
         
@@ -80,11 +73,6 @@ class ModeAwareAttribute(device.Attribute):
         if parser is None:
             raise TypeError("ModeAwareAttribute.__init__() missing required argument 'type_cls' (parser)")
         
-        # #region agent log
-        with open(log_path, "a") as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"cip_plc.py:72","message":"ModeAwareAttribute __init__ validated","data":{"name":name,"parser_type":str(type(parser))},"timestamp":int(time.time()*1000)}) + "\n")
-        # #endregion
-        
         # Call parent class - it expects name as first positional arg and type_cls as keyword
         # Put type_cls back in kwargs for parent
         kwargs['type_cls'] = parser
@@ -101,12 +89,6 @@ class ModeAwareAttribute(device.Attribute):
         """
         global _global_tag_manager
         
-        # #region agent log
-        log_path = "/Users/mrjoshuap/Development/wcx-plc-autoremediation/.cursor/debug.log"
-        with open(log_path, "a") as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"cip_plc.py:95","message":"__getitem__ called","data":{"tag_name":self.tag_name,"key":str(key),"key_type":str(type(key)),"tag_manager_available":_global_tag_manager is not None},"timestamp":int(time.time()*1000)}) + "\n")
-        # #endregion
-        
         if _global_tag_manager is None:
             logger.warning(f"Tag manager not set for {self.tag_name}")
             default_value = 0 if not isinstance(key, slice) else [0]
@@ -115,11 +97,6 @@ class ModeAwareAttribute(device.Attribute):
         try:
             value = _global_tag_manager.get_tag_value(self.tag_name)
             logger.debug(f"Attribute read {self.tag_name}: {value}")
-            
-            # #region agent log
-            with open(log_path, "a") as f:
-                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"cip_plc.py:110","message":"tag value retrieved","data":{"tag_name":self.tag_name,"value":value,"is_slice":isinstance(key, slice)},"timestamp":int(time.time()*1000)}) + "\n")
-            # #endregion
             
             # If key is a slice, return a list (cpppo expects iterable for slices)
             if isinstance(key, slice):
@@ -165,7 +142,7 @@ class CIPPLC:
             mode: Operating mode
         """
         if not CPPPO_AVAILABLE:
-            raise ImportError("cpppo is required. Install with: pip install cpppo")
+            raise ImportError("cpppo is required. Please install dependencies from requirements.txt or see documentation for setup instructions.")
         
         self.ip = ip
         self.port = port
@@ -194,12 +171,6 @@ class CIPPLC:
             return
         
         try:
-            # #region agent log
-            log_path = "/Users/mrjoshuap/Development/wcx-plc-autoremediation/.cursor/debug.log"
-            with open(log_path, "a") as f:
-                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"cip_plc.py:100","message":"start() called","data":{"ip":self.ip,"port":self.port},"timestamp":int(time.time()*1000)}) + "\n")
-            # #endregion
-            
             # Start server in background thread
             self.running = True
             self.server_thread = threading.Thread(
@@ -210,11 +181,6 @@ class CIPPLC:
             
             # Give server time to start
             time.sleep(1)
-            
-            # #region agent log
-            with open(log_path, "a") as f:
-                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"cip_plc.py:115","message":"server thread started","data":{"thread_alive":self.server_thread.is_alive()},"timestamp":int(time.time()*1000)}) + "\n")
-            # #endregion
             
             logger.info(f"CIP PLC started on {self.ip}:{self.port} in {self.mode.value} mode")
             logger.info(f"Available tags: {', '.join(self.tag_manager.list_tags())}")
@@ -230,49 +196,22 @@ class CIPPLC:
             # Try different import approaches to find the correct main function
             import sys
             
-            # #region agent log
-            log_path = "/Users/mrjoshuap/Development/wcx-plc-autoremediation/.cursor/debug.log"
-            with open(log_path, "a") as f:
-                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"cip_plc.py:187","message":"_run_server entry","data":{"ip":self.ip,"port":self.port,"mode":self.mode.value},"timestamp":int(time.time()*1000)}) + "\n")
-            # #endregion
-            
             # Import the main module first, then get the main function from it
             import cpppo.server.enip.main as enip_main_module
-            # #region agent log
-            with open(log_path, "a") as f:
-                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"cip_plc.py:195","message":"imported enip_main_module","data":{"type":str(type(enip_main_module)),"has_main":hasattr(enip_main_module,"main"),"dir_items":str([x for x in dir(enip_main_module) if not x.startswith('_')])[:200]},"timestamp":int(time.time()*1000)}) + "\n")
-            # #endregion
             
             # Get the main function from the module
             if hasattr(enip_main_module, 'main'):
                 enip_main = enip_main_module.main
-                # #region agent log
-                with open(log_path, "a") as f:
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"cip_plc.py:201","message":"got main from module","data":{"type":str(type(enip_main)),"callable":callable(enip_main)},"timestamp":int(time.time()*1000)}) + "\n")
-                # #endregion
             else:
                 # If no 'main' attribute, the module itself might be callable (unlikely but handle it)
-                # #region agent log
-                with open(log_path, "a") as f:
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"cip_plc.py:207","message":"no main attribute, checking if module is callable","data":{"callable":callable(enip_main_module)},"timestamp":int(time.time()*1000)}) + "\n")
-                # #endregion
                 raise AttributeError("cpppo.server.enip.main module has no 'main' attribute")
             
             # Final verification
             if not callable(enip_main):
-                # #region agent log
-                with open(log_path, "a") as f:
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"cip_plc.py:213","message":"enip_main not callable after import","data":{"type":str(type(enip_main)),"dir":str(dir(enip_main))[:200] if hasattr(enip_main,"__dict__") else "N/A"},"timestamp":int(time.time()*1000)}) + "\n")
-                # #endregion
                 raise TypeError(f"enip_main is not callable, it's a {type(enip_main)}")
             
             # Set global tag manager BEFORE creating attributes
             set_global_tag_manager(self.tag_manager)
-            
-            # #region agent log
-            with open(log_path, "a") as f:
-                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"cip_plc.py:162","message":"tag_manager set","data":{"tag_manager_set":_global_tag_manager is not None},"timestamp":int(time.time()*1000)}) + "\n")
-            # #endregion
             
             # Build tag definitions for cpppo
             # Format: name -> (CIP_type_string, count)
@@ -295,11 +234,6 @@ class CIPPLC:
             
             # Build address string
             address = f"{self.ip}:{self.port}"
-            
-            # #region agent log
-            with open(log_path, "a") as f:
-                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"cip_plc.py:188","message":"before enip_main call","data":{"address":address,"tag_count":len(cpppo_tag_defs),"enip_main_type":str(type(enip_main)),"enip_main_str":str(enip_main),"has_main_attr":hasattr(enip_main,"main"),"callable":callable(enip_main)},"timestamp":int(time.time()*1000)}) + "\n")
-            # #endregion
             
             # Prepare arguments for enip_main
             # cpppo expects tags as command-line arguments in format: TAG=TYPE[count]
@@ -325,22 +259,12 @@ class CIPPLC:
                 logger.info(f"Tags: {list(cpppo_tag_defs.keys())}")
                 logger.info("Waiting for connections...")
                 
-                # #region agent log
-                with open(log_path, "a") as f:
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"cip_plc.py:202","message":"calling enip_main","data":{"callable":callable(enip_main),"tag_args_count":len(tag_args)},"timestamp":int(time.time()*1000)}) + "\n")
-                # #endregion
-                
                 # Run cpppo server with ModeAwareAttribute class
                 # enip_main will parse sys.argv and create ModeAwareAttribute instances with (name, parser) signature
                 enip_main(
                     attribute_class=ModeAwareAttribute,
                     args=sys.argv[1:]  # Pass all args including tag definitions
                 )
-                
-                # #region agent log
-                with open(log_path, "a") as f:
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"cip_plc.py:210","message":"enip_main returned","data":{},"timestamp":int(time.time()*1000)}) + "\n")
-                # #endregion
             finally:
                 sys.argv = original_argv
             
@@ -389,8 +313,8 @@ class CIPPLC:
 def main():
     """Main entry point for CIP PLC simulator."""
     if not CPPPO_AVAILABLE:
-        print("ERROR: cpppo is required but not installed.")
-        print("Install with: pip install cpppo")
+        logger.error("cpppo is required but not installed.")
+        logger.error("Please install dependencies from requirements.txt or see documentation for setup instructions.")
         return
     
     parser = argparse.ArgumentParser(description="CIP-Compatible Mock PLC Simulator")

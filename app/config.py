@@ -15,7 +15,7 @@ class PLCConfig:
     timeout: float = 5.0
     poll_interval_ms: int = 1000
     mock_mode: bool = False  # Enable mock mode for graceful handling of unsupported services
-    protocol_mode: str = "serial"  # Protocol mode: "serial" (disable MSP) or "msp" (use pycomm3 default)
+    protocol_mode: str = "default"  # Protocol mode: "default" (use pycomm3 default) or "serial" (disable MSP, use serial methods)
 
 
 @dataclass
@@ -177,10 +177,10 @@ class ConfigLoader:
             raise ValueError("PLC configuration missing required field: ip_address")
         
         # Validate protocol_mode
-        protocol_mode = str(plc_data.get('protocol_mode', 'serial')).lower()
-        if protocol_mode not in ['serial', 'msp']:
+        protocol_mode = str(plc_data.get('protocol_mode', 'default')).lower()
+        if protocol_mode not in ['default', 'serial']:
             raise ValueError(
-                f"Invalid protocol_mode '{protocol_mode}'. Must be 'serial' or 'msp'"
+                f"Invalid protocol_mode '{protocol_mode}'. Must be 'default' or 'serial'"
             )
         
         return PLCConfig(

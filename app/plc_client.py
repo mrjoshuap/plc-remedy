@@ -64,26 +64,25 @@ class PLCClient:
                 init_program_tags=init_program_tags
             )
             
-            # Determine if we should force Micro800 mode (serial mode, disables MSP)
-            force_micro800 = False
+            # Set micro800 override if mock_mode is enabled (independent of protocol_mode)
             if self.config.mock_mode:
-                # Mock PLCs always need serial mode (Micro800) to disable MSP
-                force_micro800 = True
-                logger.debug("Forcing Micro800 mode (mock_mode enabled)")
-            elif self.config.protocol_mode == "serial":
-                # User explicitly requested serial mode
-                force_micro800 = True
-                logger.debug("Forcing Micro800 mode (protocol_mode=serial)")
-            else:
-                # protocol_mode == "msp" - use pycomm3 default logic
-                logger.debug("Using pycomm3 default protocol logic (protocol_mode=msp)")
-            
-            if force_micro800:
                 if hasattr(driver, '_micro800'):
                     driver._micro800 = True
-                # Also try to set it via _cfg if available
                 if hasattr(driver, '_cfg'):
                     driver._cfg['micro800'] = True
+                logger.debug("Set Micro800 override (mock_mode enabled)")
+            
+            # Determine protocol mode behavior
+            if self.config.protocol_mode == "serial":
+                # Force Micro800 mode to disable MSP and use serial methods
+                if hasattr(driver, '_micro800'):
+                    driver._micro800 = True
+                if hasattr(driver, '_cfg'):
+                    driver._cfg['micro800'] = True
+                logger.debug("Forcing Micro800 mode (protocol_mode=serial, using serial methods)")
+            else:
+                # protocol_mode == "default" - use pycomm3 default logic
+                logger.debug("Using pycomm3 default protocol logic (protocol_mode=default)")
             
             # Open connection (this is a blocking network operation)
             driver.open()
@@ -475,8 +474,10 @@ class PLCClient:
     def read_tags(self, tag_names: List[str]) -> Dict[str, TagResult]:
         """Read multiple tags from the PLC using individual single-tag reads.
         
-        This method reads tags one at a time to avoid Multiple Service Packets (MSP),
-        which some mock PLCs don't support properly.
+        This method reads tags sequentially. When protocol_mode is "serial",
+        this avoids Multiple Service Packets (MSP). When protocol_mode is "default",
+        pycomm3 may use MSP internally for other operations, but tag reads are
+        still performed sequentially.
         
         Args:
             tag_names: List of tag names to read
@@ -488,7 +489,7 @@ class PLCClient:
         
         # Read tags sequentially to avoid overwhelming the PLC
         # The read_lock in read_tag() ensures only one read happens at a time
-        # This also avoids Multiple Service Packets, which some mock PLCs don't support properly
+        # When protocol_mode is "serial", this avoids Multiple Service Packets (MSP)
         for i, tag_name in enumerate(tag_names):
             logger.debug(f"Reading tag: {tag_name}")
             result = self.read_tag(tag_name)

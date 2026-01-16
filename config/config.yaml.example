@@ -7,8 +7,8 @@ plc:
   timeout: 5.0                  # Connection timeout in seconds
   poll_interval_ms: 1000        # Polling interval in milliseconds
   mock_mode: false              # Set to true when using mock PLC to gracefully handle unsupported CIP services
-  protocol_mode: "serial"       # Protocol mode: "serial" (disable MSP, Micro800 mode) or "msp" (use pycomm3 default, allow MSP)
-                                # Note: mock_mode always uses "serial" mode regardless of this setting
+  protocol_mode: "default"      # Protocol mode: "default" (use pycomm3 default, may use MSP) or "serial" (disable MSP, use serial methods)
+                                # Note: mock_mode and protocol_mode are independent - mock_mode only sets micro800 override
 
 tags:
   # Light status tag - boolean

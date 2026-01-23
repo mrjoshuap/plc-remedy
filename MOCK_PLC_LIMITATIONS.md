@@ -8,7 +8,7 @@ The CIP-compatible mock PLC (`mock/cip_plc.py`) provides full CIP protocol suppo
 
 The CIP-compatible mock PLC has the following limitations:
 
-1. **Multiple Service Packet (MSP) Not Supported**: 
+1. **Multiple Service Packet (MSP) Not Supported**:
    - pycomm3's LogixDriver may use Multiple Service Packets (MSP) for some operations
    - cpppo's parser cannot properly handle MSP requests
    - **Workaround**: When `mock_mode: true`, the application sets a micro800 override to help pycomm3 bypass MSP internally. This allows the mock PLC to work correctly.

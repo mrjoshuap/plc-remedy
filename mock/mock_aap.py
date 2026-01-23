@@ -23,12 +23,12 @@ _job_counter = 1000
 def launch_job(template_id):
     """Launch a mock job template."""
     global _job_counter
-    
+
     logger.info(f"Received job launch request for template {template_id}")
-    
+
     job_id = _job_counter
     _job_counter += 1
-    
+
     # Create job record
     job = {
         'id': job_id,
@@ -37,11 +37,11 @@ def launch_job(template_id):
         'created': datetime.now().isoformat(),
         'extra_vars': request.json.get('extra_vars', {}) if request.is_json else {}
     }
-    
+
     _jobs[job_id] = job
-    
+
     logger.info(f"Created job {job_id} for template {template_id}, status: pending")
-    
+
     return jsonify({
         'id': job_id,
         'status': 'pending',
@@ -54,22 +54,22 @@ def launch_job(template_id):
 def get_job(job_id):
     """Get job status."""
     logger.info(f"Received job status request for job {job_id}")
-    
+
     if job_id not in _jobs:
         logger.warning(f"Job {job_id} not found")
         return jsonify({'error': 'Job not found'}), 404
-    
+
     job = _jobs[job_id]
-    
+
     # Calculate elapsed time since job creation
     created_time = datetime.fromisoformat(job['created'])
     elapsed_seconds = (datetime.now() - created_time).total_seconds()
-    
+
     # Time-based job progression (deterministic)
     # 0-2 seconds: pending
     # 2-5 seconds: running
     # 5+ seconds: successful (or failed with 5% chance)
-    
+
     old_status = job['status']
     if job['status'] == 'pending':
         if elapsed_seconds >= 2:
@@ -85,20 +85,20 @@ def get_job(job_id):
                 job['status'] = 'successful'
             job['finished'] = datetime.now().isoformat()
             logger.info(f"Job {job_id} transitioned from running to {job['status']} (elapsed: {elapsed_seconds:.1f}s)")
-    
+
     # Log status if it changed
     if old_status != job['status']:
         logger.info(f"Job {job_id} status changed: {old_status} -> {job['status']}")
-    
+
     # Calculate elapsed time for response
     if job.get('started'):
         started_time = datetime.fromisoformat(job['started'])
         elapsed = int((datetime.now() - started_time).total_seconds())
     else:
         elapsed = int(elapsed_seconds) if elapsed_seconds > 0 else 0
-    
+
     logger.info(f"Returning job {job_id} status: {job['status']} (elapsed: {elapsed}s)")
-    
+
     return jsonify({
         'id': job_id,
         'status': job['status'],
@@ -113,13 +113,13 @@ def get_job(job_id):
 def get_job_stdout(job_id):
     """Get job stdout output."""
     logger.info(f"Received stdout request for job {job_id}")
-    
+
     if job_id not in _jobs:
         logger.warning(f"Job {job_id} not found for stdout request")
         return jsonify({'error': 'Job not found'}), 404
-    
+
     job = _jobs[job_id]
-    
+
     output = f"""Mock AAP Job Output (Job ID: {job_id})
 ========================================
 PLAY [Remediation Task] ****************
@@ -130,7 +130,7 @@ ok: [localhost]
 PLAY RECAP *****************************
 localhost                  : ok=1    changed=0    unreachable=0    failed=0
 """
-    
+
     return output, 200, {'Content-Type': 'text/plain'}
 
 

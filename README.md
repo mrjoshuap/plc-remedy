@@ -851,7 +851,7 @@ The pre-commit hooks validate:
 
 - **Python files** (`*.py`): Syntax checking using `pyflakes`
 - **HTML files** (`*.html`): HTML5 validation using `html5validator`
-- **YAML files** (`*.yaml`, `*.yml`, `*.yaml.example`, `*.yaml.test`, `*.yml.example`, `*.yml.test`): 
+- **YAML files** (`*.yaml`, `*.yml`, `*.yaml.example`, `*.yaml.test`, `*.yml.example`, `*.yml.test`):
   - Basic syntax validation using `check-yaml`
   - Comprehensive linting using `yamllint`
 

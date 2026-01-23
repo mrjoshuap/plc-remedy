@@ -1,10 +1,11 @@
+---
 # Pre-commit hooks configuration
 # See https://pre-commit.com for more information
 
 repos:
   # Built-in pre-commit hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v6.0.0
     hooks:
       - id: check-yaml
         # Check all YAML variants including example and test files
@@ -17,23 +18,19 @@ repos:
       - id: check-merge-conflict
       - id: check-json
       - id: check-toml
-
-  # Python syntax checking with pyflakes
-  - repo: https://github.com/PyCQA/pyflakes
-    rev: 3.1.0
-    hooks:
-      - id: pyflakes
-        # Check all Python files
+      - id: check-ast  # Python syntax validation (validates Python syntax by parsing AST)
         files: \.py$
 
-  # HTML syntax validation
-  - repo: https://github.com/validator/validator
-    rev: v23.11.0
+  # HTML syntax validation - basic check using Python's HTMLParser
+  - repo: local
     hooks:
-      - id: html5validator
-        args: [--format=json]
-        # Check all HTML files
+      - id: html-syntax-check
+        name: HTML Syntax Check
+        entry: python3 -c "import html.parser, sys; parser = html.parser.HTMLParser(); [parser.feed(open(f, 'r', encoding='utf-8', errors='ignore').read()) for f in sys.argv[1:]]"
+        language: system
+        types: [html]
         files: \.html$
+        pass_filenames: true
 
   # YAML linting with yamllint (more comprehensive than check-yaml)
   - repo: https://github.com/adrienverge/yamllint

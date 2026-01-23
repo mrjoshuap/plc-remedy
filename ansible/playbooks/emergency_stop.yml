@@ -4,7 +4,7 @@
   gather_facts: false
   vars:
     middleware_callback_url: "{{ lookup('env', 'MIDDLEWARE_URL', default='') }}"
-  
+
   tasks:
     - name: Log remediation start
       ansible.builtin.debug:

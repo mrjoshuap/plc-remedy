@@ -12,7 +12,7 @@ except ImportError:
 
 def test_connection(ip="127.0.0.1", timeout=5.0):
     """Test connection to CIP PLC.
-    
+
     Args:
         ip: PLC IP address
         timeout: Connection timeout
@@ -20,16 +20,16 @@ def test_connection(ip="127.0.0.1", timeout=5.0):
     print(f"Testing connection to {ip}...")
     print(f"Timeout: {timeout} seconds")
     print()
-    
+
     try:
         driver = LogixDriver(ip, timeout=timeout)
         print("Attempting to open connection...")
         driver.open()
-        
+
         if driver.connected:
             print("✓ Connection successful!")
             print()
-            
+
             # Try to read a tag
             print("Testing tag read...")
             try:
@@ -40,7 +40,7 @@ def test_connection(ip="127.0.0.1", timeout=5.0):
                     print(f"✓ Tag read successful: Light_Status = {result.value}")
             except Exception as e:
                 print(f"✗ Tag read failed: {e}")
-            
+
             driver.close()
             print()
             print("Connection test completed successfully!")
@@ -48,7 +48,7 @@ def test_connection(ip="127.0.0.1", timeout=5.0):
         else:
             print("✗ Connection failed: driver reports not connected")
             return False
-            
+
     except Exception as e:
         print(f"✗ Connection failed: {e}")
         print()

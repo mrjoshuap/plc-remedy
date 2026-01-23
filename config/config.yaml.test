@@ -1,3 +1,4 @@
+---
 # Testing Configuration - Uses All Mocks
 # This configuration is designed for testing without requiring real PLC or AAP
 # Copy this to config.yaml for local testing

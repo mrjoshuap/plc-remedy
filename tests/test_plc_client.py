@@ -37,9 +37,9 @@ def test_plc_client_connect_success(mock_driver_class, plc_client):
     mock_driver = MagicMock()
     mock_driver.connected = True
     mock_driver_class.return_value = mock_driver
-    
+
     result = plc_client.connect()
-    
+
     assert result is True
     assert plc_client.is_connected()
     mock_driver.open.assert_called_once()
@@ -51,9 +51,9 @@ def test_plc_client_connect_failure(mock_driver_class, plc_client):
     mock_driver = MagicMock()
     mock_driver.connected = False
     mock_driver_class.return_value = mock_driver
-    
+
     result = plc_client.connect()
-    
+
     assert result is False
     assert not plc_client.is_connected()
 
@@ -68,10 +68,10 @@ def test_plc_client_read_tag_success(mock_driver_class, plc_client):
     mock_result.value = 1750
     mock_driver.read.return_value = mock_result
     mock_driver_class.return_value = mock_driver
-    
+
     plc_client.connect()
     result = plc_client.read_tag("Motor_Speed")
-    
+
     assert result.success is True
     assert result.value == 1750
     assert result.error is None
@@ -87,10 +87,10 @@ def test_plc_client_read_tag_error(mock_driver_class, plc_client):
     mock_result.value = None
     mock_driver.read.return_value = mock_result
     mock_driver_class.return_value = mock_driver
-    
+
     plc_client.connect()
     result = plc_client.read_tag("InvalidTag")
-    
+
     assert result.success is False
     assert result.error is not None
 
@@ -104,7 +104,7 @@ def test_plc_client_disconnect(plc_client):
 def test_plc_client_get_connection_stats(plc_client):
     """Test getting connection statistics."""
     stats = plc_client.get_connection_stats()
-    
+
     assert stats.connected is False
     assert stats.total_reads == 0
     assert stats.total_errors == 0

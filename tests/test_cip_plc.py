@@ -62,7 +62,7 @@ def test_tag_manager_set_tag_value(tag_manager):
     """Test setting tag value."""
     success = tag_manager.set_tag_value("Motor_Speed", 2000)
     assert success is True
-    
+
     # Value should be updated (though mode transformation may still apply)
     assert tag_manager.tags["Motor_Speed"]["value"] == 2000
 
@@ -87,7 +87,7 @@ def test_connection_manager_forward_open(connection_manager):
     # Simplified Forward Open request
     request_data = b"\x00" * 50  # Mock request data
     success, response, conn_o_to_t, conn_t_to_o = connection_manager.forward_open(request_data)
-    
+
     assert success is True
     assert conn_o_to_t > 0
     assert conn_t_to_o > 0
@@ -136,7 +136,7 @@ def test_tag_manager_statistics(tag_manager):
     # Perform some operations
     tag_manager.get_tag_value("Light_Status")
     tag_manager.set_tag_value("Motor_Speed", 1800)
-    
+
     stats = tag_manager.get_statistics()
     assert stats["read_count"] > 0
     assert stats["write_count"] > 0

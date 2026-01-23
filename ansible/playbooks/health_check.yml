@@ -4,7 +4,7 @@
   gather_facts: false
   vars:
     middleware_url: "{{ lookup('env', 'MIDDLEWARE_URL', default='http://localhost:15000') }}"
-  
+
   tasks:
     - name: Get middleware status
       ansible.builtin.uri:
@@ -42,7 +42,7 @@
         method: POST
         return_content: true
       loop: "{{ violations_response.json.data.violations | default([]) }}"
-      when: 
+      when:
         - violations_response.status == 200
         - violations_response.json.data.violations | length > 0
         - item.auto_remediate | default(false) | bool

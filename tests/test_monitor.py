@@ -75,7 +75,7 @@ def test_monitor_service_start_stop(monitor_service):
     """Test starting and stopping monitor service."""
     monitor_service.start()
     assert monitor_service._running is True
-    
+
     monitor_service.stop()
     assert monitor_service._running is False
 
@@ -84,7 +84,7 @@ def test_monitor_service_evaluate_threshold_violation(monitor_service):
     """Test threshold violation detection."""
     # Test outside_range violation
     monitor_service._evaluate_threshold("motor_speed", 2500, datetime.now())
-    
+
     violations = monitor_service.get_active_violations()
     assert len(violations) > 0
     assert violations[0].tag_name == "motor_speed"
@@ -93,7 +93,7 @@ def test_monitor_service_evaluate_threshold_violation(monitor_service):
 def test_monitor_service_evaluate_threshold_normal(monitor_service):
     """Test normal value (no violation)."""
     monitor_service._evaluate_threshold("motor_speed", 1750, datetime.now())
-    
+
     violations = monitor_service.get_active_violations()
     assert len(violations) == 0
 
@@ -101,7 +101,7 @@ def test_monitor_service_evaluate_threshold_normal(monitor_service):
 def test_monitor_service_get_current_values(monitor_service, mock_plc_client):
     """Test getting current tag values."""
     values = monitor_service.get_current_values()
-    
+
     # Values should be empty initially, but method should work
     assert isinstance(values, dict)
 
@@ -109,7 +109,7 @@ def test_monitor_service_get_current_values(monitor_service, mock_plc_client):
 def test_monitor_service_get_statistics(monitor_service):
     """Test getting monitoring statistics."""
     stats = monitor_service.get_statistics()
-    
+
     assert 'uptime_seconds' in stats
     assert 'total_tag_reads' in stats
     assert 'total_violations' in stats

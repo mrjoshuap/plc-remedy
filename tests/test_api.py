@@ -41,7 +41,7 @@ def mock_components(app_config):
     mock_monitor = MagicMock(spec=MonitorService)
     mock_chaos = MagicMock(spec=ChaosEngine)
     mock_socketio = MagicMock(spec=SocketIO)
-    
+
     return {
         'monitor': mock_monitor,
         'aap': mock_aap,
@@ -57,7 +57,7 @@ def test_app(mock_components):
     app = Flask(__name__)
     app.config['TESTING'] = True
     app.config['SECRET_KEY'] = 'test-secret-key'
-    
+
     # Initialize API
     init_api(
         mock_components['monitor'],
@@ -66,9 +66,9 @@ def test_app(mock_components):
         mock_components['config'],
         mock_components['socketio']
     )
-    
+
     app.register_blueprint(api)
-    
+
     return app
 
 
@@ -81,7 +81,7 @@ def client(test_app):
 def test_health_endpoint(client):
     """Test health check endpoint."""
     response = client.get('/api/v1/health')
-    
+
     assert response.status_code == 200
     data = response.get_json()
     assert data['success'] is True
@@ -95,9 +95,9 @@ def test_status_endpoint(client, mock_components):
         to_dict=lambda: {'connected': True}
     )
     mock_components['monitor'].get_current_values.return_value = {}
-    
+
     response = client.get('/api/v1/status')
-    
+
     assert response.status_code == 200
     data = response.get_json()
     assert data['success'] is True
@@ -106,9 +106,9 @@ def test_status_endpoint(client, mock_components):
 def test_tags_endpoint(client, mock_components):
     """Test tags endpoint."""
     mock_components['monitor'].get_current_values.return_value = {}
-    
+
     response = client.get('/api/v1/tags')
-    
+
     assert response.status_code == 200
     data = response.get_json()
     assert data['success'] is True
@@ -120,9 +120,9 @@ def test_chaos_status_endpoint(client, mock_components):
         'enabled': False,
         'failure_injection_rate': 0.05
     }
-    
+
     response = client.get('/api/v1/chaos/status')
-    
+
     assert response.status_code == 200
     data = response.get_json()
     assert data['success'] is True
@@ -131,7 +131,7 @@ def test_chaos_status_endpoint(client, mock_components):
 def test_chaos_enable_endpoint(client, mock_components):
     """Test chaos enable endpoint."""
     response = client.post('/api/v1/chaos/enable')
-    
+
     assert response.status_code == 200
     mock_components['chaos'].enable.assert_called_once()
 
@@ -139,7 +139,7 @@ def test_chaos_enable_endpoint(client, mock_components):
 def test_config_endpoint(client):
     """Test config endpoint."""
     response = client.get('/api/v1/config')
-    
+
     assert response.status_code == 200
     data = response.get_json()
     assert data['success'] is True

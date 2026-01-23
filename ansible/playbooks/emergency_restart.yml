@@ -5,7 +5,7 @@
   vars:
     middleware_callback_url: "{{ lookup('env', 'MIDDLEWARE_URL', default='') }}"
     service_name: "{{ lookup('env', 'SERVICE_NAME', default='plc-remedy') }}"
-  
+
   tasks:
     - name: Log remediation start
       ansible.builtin.debug:

@@ -42,7 +42,7 @@ class TagResult:
     timestamp: datetime
     success: bool
     error: Optional[str] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
@@ -63,13 +63,13 @@ class ConnectionStats:
     total_errors: int = 0
     connection_start_time: Optional[datetime] = None
     last_error: Optional[str] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             'connected': self.connected,
             'last_successful_read': (
-                self.last_successful_read.isoformat() 
+                self.last_successful_read.isoformat()
                 if self.last_successful_read else None
             ),
             'total_reads': self.total_reads,
@@ -90,7 +90,7 @@ class Event:
     data: Dict[str, Any]
     severity: Severity = Severity.INFO
     tag_name: Optional[str] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
@@ -112,7 +112,7 @@ class RemediationJob:
     end_time: Optional[datetime] = None
     error_message: Optional[str] = None
     aap_job_id: Optional[int] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
@@ -137,7 +137,7 @@ class MetricSnapshot:
     total_remediations: int
     connection_uptime_percent: float
     tag_values: Dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
@@ -162,7 +162,7 @@ class ThresholdViolation:
     timestamp: datetime
     resolved: bool = False
     resolved_at: Optional[datetime] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {

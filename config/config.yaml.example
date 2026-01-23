@@ -1,3 +1,4 @@
+---
 # PLC Self-Healing Middleware Configuration
 # Copy this file to config.yaml and customize for your environment
 # All values can be overridden via environment variables using ${VAR_NAME} syntax

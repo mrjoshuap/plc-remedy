@@ -18,7 +18,7 @@
       - name: "Motor_Direction"
         condition: "not_equals"
         nominal: 1
-  
+
   tasks:
     - name: Read all monitored tags
       community.cip.cip_read:
@@ -32,14 +32,14 @@
         violations: "{{ violations | default([]) + [item] }}"
       loop: "{{ tag_thresholds }}"
       when: >
-        (item.condition == 'outside_range' and 
+        (item.condition == 'outside_range' and
          current_values.tags[item.name] is defined and
-         (current_values.tags[item.name] < item.low or 
+         (current_values.tags[item.name] < item.low or
           current_values.tags[item.name] > item.high)) or
-        (item.condition == 'equals' and 
+        (item.condition == 'equals' and
          current_values.tags[item.name] is defined and
          current_values.tags[item.name] == item.failure_value) or
-        (item.condition == 'not_equals' and 
+        (item.condition == 'not_equals' and
          current_values.tags[item.name] is defined and
          current_values.tags[item.name] != item.nominal)
 

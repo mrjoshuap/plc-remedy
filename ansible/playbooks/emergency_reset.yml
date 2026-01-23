@@ -10,7 +10,7 @@
       Motor_Speed: 1750
       Motor_Direction: 1
       Motor_Run: true
-  
+
   tasks:
     - name: Log remediation start
       ansible.builtin.debug:

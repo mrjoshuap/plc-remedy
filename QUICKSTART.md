@@ -1,6 +1,112 @@
 # Quick Start Guide
 
-## Prerequisites Check
+## Containerized Deployment (Recommended)
+
+Containerized deployment is the **default and recommended** method for production environments. This method provides consistent, reliable deployment with all dependencies included.
+
+### Prerequisites Check
+
+- [ ] Podman or Docker installed
+- [ ] Network access to PLC (or use mock PLC)
+- [ ] Environment variables configured (see below)
+
+### 5-Minute Containerized Setup
+
+1. **Build the container:**
+```bash
+podman build -t plc-remedy:latest .
+```
+
+2. **Create environment file:**
+```bash
+# Copy the example environment file
+cp deployment/plc-remedy.env.example plc-remedy.env
+
+# Edit with your settings (minimum required variables)
+nano plc-remedy.env
+```
+
+**Minimum required environment variables:**
+```bash
+# Generate a secure Flask secret key
+FLASK_SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+
+# PLC configuration
+PLC_IP_ADDRESS=192.168.1.100
+
+# AAP configuration (if using real AAP, not mock)
+AAP_MOCK_MODE=true  # Set to false for real AAP
+AAP_TOKEN=your-token-here  # Only needed if AAP_MOCK_MODE=false
+```
+
+3. **Run the container:**
+```bash
+podman run -d \
+  --name plc-remedy \
+  -p 15000:5000 \
+  -v ./config:/app/config:ro \
+  --env-file=plc-remedy.env \
+  plc-remedy:latest
+```
+
+4. **Access the dashboard:**
+   - Navigate to http://localhost:15000
+   - You should see the dashboard with real-time updates
+
+### Key Environment Variables for Containerized Deployment
+
+**PLC Configuration:**
+```bash
+PLC_IP_ADDRESS=192.168.1.100      # Your PLC IP address (required)
+PLC_SLOT=0                        # PLC slot number (default: 0)
+PLC_TIMEOUT=5.0                   # Connection timeout in seconds
+PLC_POLL_INTERVAL_MS=1000         # Polling interval in milliseconds
+PLC_MOCK_MODE=false               # Set to "true" for mock PLC
+PLC_PROTOCOL_MODE=default         # "default" or "serial"
+```
+
+**AAP Configuration:**
+```bash
+AAP_ENABLED=true                  # Enable AAP integration
+AAP_MOCK_MODE=true                # Set to "false" for real AAP
+AAP_BASE_URL=https://aap.example.com  # Only needed if AAP_MOCK_MODE=false
+AAP_VERIFY_SSL=true               # Verify SSL certificates
+AAP_TOKEN=your-token-here         # Required if AAP_MOCK_MODE=false
+AAP_JOB_TEMPLATE_EMERGENCY_STOP=42
+AAP_JOB_TEMPLATE_EMERGENCY_RESET=43
+AAP_JOB_TEMPLATE_EMERGENCY_RESTART=44
+AAP_JOB_TEMPLATE_GATHER_METRICS=45
+```
+
+**Tag Configuration (examples):**
+```bash
+# Light tag
+TAG_LIGHT_NAME=Light_Status
+TAG_LIGHT_TYPE=bool
+TAG_LIGHT_NOMINAL=true
+TAG_LIGHT_FAILURE_CONDITION=equals
+TAG_LIGHT_FAILURE_VALUE=false
+
+# Motor speed tag
+TAG_MOTOR_SPEED_NAME=Motor_Speed
+TAG_MOTOR_SPEED_TYPE=int
+TAG_MOTOR_SPEED_NOMINAL=1750
+TAG_MOTOR_SPEED_FAILURE_CONDITION=outside_range
+TAG_MOTOR_SPEED_FAILURE_THRESHOLD_LOW=1500
+TAG_MOTOR_SPEED_FAILURE_THRESHOLD_HIGH=2000
+```
+
+For a complete list of all environment variables, see the [Environment Variables Reference](README.md#environment-variables-reference) in the main README.
+
+### Production Deployment with Systemd
+
+For production deployments, see the [Production Deployment with Systemd Service](README.md#production-deployment-with-systemd-service) section in the main README for step-by-step instructions on setting up automatic startup, restart on failure, and proper logging integration.
+
+## Development/Testing Installation
+
+The following installation method is intended for **development and testing only**. For production deployments, use the containerized deployment method above.
+
+### Prerequisites Check
 
 - [ ] Python 3.10+ installed
 - [ ] Conda installed (recommended) or Python venv available
@@ -8,7 +114,7 @@
 - [ ] Configuration file created
 - [ ] tmux installed (for testing with wrapper script - optional but recommended)
 
-## 5-Minute Setup
+### 5-Minute Development Setup
 
 0. **Install Conda (if not already installed):**
 
@@ -182,4 +288,4 @@ If running components manually:
 - Review the full [README.md](README.md) for detailed documentation
 - Explore the REST API endpoints
 - Customize Ansible playbooks for your environment
-- Set up containerized deployment
+- For production: Set up containerized deployment with systemd service

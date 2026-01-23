@@ -1,6 +1,6 @@
 # PLC Self-Healing Middleware Container
-# Based on RHEL9 UBI Python image
-FROM registry.access.redhat.com/ubi9/python-310:latest
+# Based on official Python 3.10 Debian image
+FROM python:3.10
 
 # Container metadata labels
 LABEL maintainer="PLC Remediation Team"
@@ -13,13 +13,14 @@ LABEL org.opencontainers.image.description="Flask-based middleware for PLC monit
 WORKDIR /app
 
 # Install system dependencies
-# gcc and python3-devel are needed for some Python packages that compile C extensions
-RUN dnf install -y gcc python3-devel && \
-    dnf clean all && \
-    rm -rf /var/cache/dnf
+# gcc and python3-dev are needed for some Python packages that compile C extensions
+RUN apt-get update && \
+    apt-get install -y gcc python3-dev && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
-# UBI images typically run as root by default, so we create a dedicated user
+# Python images typically run as root by default, so we create a dedicated user
 RUN useradd -r -u 1001 -g root -m -d /app -s /sbin/nologin -c "PLC Remediation App User" plcremedy && \
     chown -R plcremedy:root /app
 

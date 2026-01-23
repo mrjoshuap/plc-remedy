@@ -238,6 +238,8 @@ The dashboard will be available at http://localhost:15000
 
 ### Containerized Deployment
 
+#### Quick Start (Manual Container)
+
 1. Build the container:
 ```bash
 podman build -t plc-remedy:latest .
@@ -254,6 +256,175 @@ podman run -d \
 ```
 
 3. Access the dashboard at http://localhost:15000
+
+#### Podman Deployment with Systemd Service (Recommended for Production)
+
+This section describes how to deploy the application as a systemd service using rootless Podman, which provides automatic startup, restart on failure, and proper logging integration.
+
+##### Prerequisites
+
+- Podman installed and configured for rootless operation
+- Systemd user services enabled (default on most modern Linux distributions)
+- Access to create user systemd service files
+
+##### Step 1: Build the Container Image
+
+```bash
+# Build the container image
+podman build -t plc-remedy:latest .
+```
+
+##### Step 2: Prepare Configuration Directory
+
+Create a directory structure for your deployment:
+
+```bash
+# Create deployment directory in your home directory
+mkdir -p ~/plc-remedy/config
+
+# Copy your config.yaml to the deployment directory
+cp config/config.yaml ~/plc-remedy/config/
+
+# Or create from example
+cp config/config.yaml.example ~/plc-remedy/config/config.yaml
+# Edit ~/plc-remedy/config/config.yaml with your settings
+```
+
+##### Step 3: Create Environment File
+
+```bash
+# Copy the example environment file
+cp deployment/plc-remedy.env.example ~/plc-remedy/plc-remedy.env
+
+# Edit the environment file with your configuration
+nano ~/plc-remedy/plc-remedy.env
+```
+
+**Important:** Set at minimum:
+- `FLASK_SECRET_KEY` - Generate a secure key: `python3 -c "import secrets; print(secrets.token_hex(32))"`
+- `PLC_IP_ADDRESS` - Your PLC's IP address
+- `AAP_TOKEN` - If using real AAP (not mock mode)
+
+See [Environment Variables](#environment-variables) section for all available options.
+
+##### Step 4: Install Systemd Service
+
+```bash
+# Copy the systemd service file to user systemd directory
+mkdir -p ~/.config/systemd/user
+cp deployment/plc-remedy.service ~/.config/systemd/user/
+
+# Edit the service file to match your paths (if needed)
+nano ~/.config/systemd/user/plc-remedy.service
+```
+
+**Important:** Update the following paths in the service file if your deployment directory differs:
+- Volume mount path: `-v /home/%u/plc-remedy/config:/app/config:ro`
+- Environment file path: `--env-file=/home/%u/plc-remedy/plc-remedy.env`
+- Container image name: `plc-remedy:latest` (should match your built image)
+
+##### Step 5: Enable and Start the Service
+
+```bash
+# Reload systemd to recognize the new service
+systemctl --user daemon-reload
+
+# Enable the service to start on boot
+systemctl --user enable plc-remedy.service
+
+# Start the service
+systemctl --user start plc-remedy.service
+
+# Check service status
+systemctl --user status plc-remedy.service
+```
+
+##### Step 6: Verify Deployment
+
+```bash
+# View service logs
+journalctl --user -u plc-remedy.service -f
+
+# Check if container is running
+podman ps
+
+# Test health endpoint
+curl http://localhost:15000/health
+```
+
+##### Managing the Service
+
+```bash
+# Start the service
+systemctl --user start plc-remedy.service
+
+# Stop the service
+systemctl --user stop plc-remedy.service
+
+# Restart the service
+systemctl --user restart plc-remedy.service
+
+# View service status
+systemctl --user status plc-remedy.service
+
+# View recent logs
+journalctl --user -u plc-remedy.service -n 50
+
+# Follow logs in real-time
+journalctl --user -u plc-remedy.service -f
+
+# Disable automatic startup
+systemctl --user disable plc-remedy.service
+```
+
+##### Enabling Lingering for User Services
+
+If you want the service to start automatically at boot (even when not logged in), enable lingering:
+
+```bash
+# Enable lingering for your user (requires root/sudo)
+sudo loginctl enable-linger $USER
+
+# Verify lingering is enabled
+loginctl show-user $USER | grep Linger
+```
+
+##### Troubleshooting
+
+**Service fails to start:**
+- Check logs: `journalctl --user -u plc-remedy.service -n 100`
+- Verify container image exists: `podman images | grep plc-remedy`
+- Verify paths in service file are correct
+- Check environment file syntax: `podman run --env-file ~/plc-remedy/plc-remedy.env --rm plc-remedy:latest env`
+
+**Container exits immediately:**
+- Check application logs in journalctl
+- Verify config.yaml is valid YAML
+- Ensure required environment variables are set
+- Test container manually: `podman run --rm -it plc-remedy:latest`
+
+**Port already in use:**
+- Change port mapping in service file: `-p 15001:5000` (or another available port)
+- Or stop the conflicting service
+
+**Permission denied errors:**
+- Ensure config directory is readable: `chmod -R 755 ~/plc-remedy/config`
+- Check Podman is configured for rootless: `podman info | grep rootless`
+
+##### Updating the Service
+
+When you need to update the application:
+
+```bash
+# 1. Rebuild the container image
+podman build -t plc-remedy:latest .
+
+# 2. Restart the service
+systemctl --user restart plc-remedy.service
+
+# 3. Verify it's running
+systemctl --user status plc-remedy.service
+```
 
 ## Configuration
 
@@ -324,6 +495,95 @@ logging:
 - `CRITICAL`: Critical errors that may cause the application to stop
 
 The log level is case-insensitive. If the `logging` section is omitted, the default level is `INFO`.
+
+### Environment Variables
+
+All configuration values can be overridden using environment variables. This is particularly useful for containerized deployments where you want to configure the application without modifying the YAML file.
+
+**Configuration Precedence:**
+1. Environment variables (highest priority)
+2. YAML config file values
+3. Code defaults (lowest priority)
+
+Environment variables use the format `${VAR_NAME:-default}` in the YAML file, where `default` is the fallback value if the environment variable is not set.
+
+#### Flask Application Variables
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|-----------|
+| `FLASK_SECRET_KEY` | Secret key for Flask session management | `plc-remedy-secret-key-change-in-production` | Yes (in production) |
+
+#### PLC Configuration Variables
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|-----------|
+| `PLC_IP_ADDRESS` | PLC IP address | `192.168.1.100` | Yes |
+| `PLC_SLOT` | PLC slot number | `0` | No |
+| `PLC_TIMEOUT` | Connection timeout in seconds | `5.0` | No |
+| `PLC_POLL_INTERVAL_MS` | Polling interval in milliseconds | `1000` | No |
+| `PLC_MOCK_MODE` | Enable mock mode (`"true"` or `"false"`) | `false` | No |
+| `PLC_PROTOCOL_MODE` | Protocol mode: `"default"` or `"serial"` | `default` | No |
+
+#### Tag Configuration Variables
+
+Tag-specific variables use the format `TAG_<tag_key>_<field>`. For example:
+- `TAG_LIGHT_NAME` - Name of the light tag
+- `TAG_LIGHT_NOMINAL` - Nominal value for light tag
+- `TAG_MOTOR_SPEED_NAME` - Name of the motor speed tag
+- `TAG_MOTOR_SPEED_FAILURE_THRESHOLD_LOW` - Lower threshold for motor speed
+
+See `deployment/plc-remedy.env.example` for complete tag variable examples.
+
+#### AAP Configuration Variables
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|-----------|
+| `AAP_ENABLED` | Enable AAP integration (`"true"` or `"false"`) | `true` | No |
+| `AAP_MOCK_MODE` | Use mock AAP responses (`"true"` or `"false"`) | `true` | No |
+| `AAP_BASE_URL` | AAP base URL | `https://aap.example.com` | Yes (if `AAP_MOCK_MODE=false`) |
+| `AAP_VERIFY_SSL` | Verify SSL certificates (`"true"` or `"false"`) | `true` | No |
+| `AAP_TOKEN` | AAP authentication token | (empty) | Yes (if `AAP_MOCK_MODE=false`) |
+| `AAP_JOB_TEMPLATE_EMERGENCY_STOP` | Job template ID for emergency stop | `42` | No |
+| `AAP_JOB_TEMPLATE_EMERGENCY_RESET` | Job template ID for emergency reset | `43` | No |
+| `AAP_JOB_TEMPLATE_EMERGENCY_RESTART` | Job template ID for emergency restart | `44` | No |
+| `AAP_JOB_TEMPLATE_GATHER_METRICS` | Job template ID for metrics gathering | `45` | No |
+
+#### Remediation Configuration Variables
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|-----------|
+| `REMEDIATION_AUTO_REMEDIATE` | Auto-trigger remediation (`"true"` or `"false"`) | `false` | No |
+| `REMEDIATION_COOLDOWN_SECONDS` | Minimum time between remediations | `30` | No |
+| `REMEDIATION_MAX_RETRIES` | Maximum retry attempts | `3` | No |
+
+#### Chaos Engineering Variables
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|-----------|
+| `CHAOS_ENABLED` | Enable chaos injection (`"true"` or `"false"`) | `false` | No |
+| `CHAOS_FAILURE_INJECTION_RATE` | Probability of failure injection (0.0-1.0) | `0.05` | No |
+| `CHAOS_FAILURE_TYPES` | Comma-separated list of failure types | `value_anomaly,network_timeout,connection_loss,service_crash` | No |
+| `CHAOS_NETWORK_TIMEOUT_MS` | Network timeout duration in milliseconds | `5000` | No |
+| `CHAOS_ANOMALY_DURATION_SECONDS` | Anomaly duration in seconds | `10` | No |
+
+#### Dashboard Configuration Variables
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|-----------|
+| `DASHBOARD_REFRESH_INTERVAL_MS` | Dashboard refresh interval in milliseconds | `1000` | No |
+| `DASHBOARD_HISTORY_RETENTION_HOURS` | Historical data retention in hours | `24` | No |
+| `DASHBOARD_CHART_DATA_POINTS` | Number of chart data points | `100` | No |
+
+#### Logging Configuration Variables
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|-----------|
+| `LOGGING_LEVEL` | Log level: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` | `INFO` | No |
+| `LOGGING_FORMAT` | Log message format string | `%(asctime)s - %(name)s - %(levelname)s - %(message)s` | No |
+
+**Note:** Boolean environment variables should be set as strings: `"true"` or `"false"`. The application automatically converts these to boolean values.
+
+For a complete example environment file, see `deployment/plc-remedy.env.example`.
 
 ## Mock PLC Simulator
 
@@ -561,6 +821,83 @@ The project follows PEP 8 style guidelines. Consider using `black` for code form
 pip install black
 black app/ tests/
 ```
+
+### Pre-commit Hooks
+
+This repository uses [pre-commit](https://pre-commit.com) to automatically check code quality before commits. Pre-commit hooks validate Python, HTML, and YAML files for syntax errors.
+
+#### Installation
+
+1. Install pre-commit (if not already installed):
+```bash
+pip install pre-commit
+```
+
+Or install all development dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+2. Install the git hooks:
+```bash
+pre-commit install
+```
+
+This will install hooks that run automatically on `git commit`.
+
+#### What Gets Checked
+
+The pre-commit hooks validate:
+
+- **Python files** (`*.py`): Syntax checking using `pyflakes`
+- **HTML files** (`*.html`): HTML5 validation using `html5validator`
+- **YAML files** (`*.yaml`, `*.yml`, `*.yaml.example`, `*.yaml.test`, `*.yml.example`, `*.yml.test`): 
+  - Basic syntax validation using `check-yaml`
+  - Comprehensive linting using `yamllint`
+
+Additional checks:
+- Trailing whitespace removal
+- End of file fixes
+- Merge conflict detection
+- Large file detection
+- JSON and TOML validation
+
+#### Running Manually
+
+You can run pre-commit hooks manually on all files:
+
+```bash
+# Run on all files
+pre-commit run --all-files
+
+# Run on staged files only
+pre-commit run
+
+# Run a specific hook
+pre-commit run pyflakes --all-files
+pre-commit run yamllint --all-files
+pre-commit run html5validator --all-files
+```
+
+#### Skipping Hooks
+
+If you need to skip pre-commit hooks for a specific commit (not recommended):
+
+```bash
+git commit --no-verify
+```
+
+**Note:** Skipping hooks should only be done in exceptional circumstances, as it bypasses important quality checks.
+
+#### Updating Hooks
+
+To update pre-commit hooks to their latest versions:
+
+```bash
+pre-commit autoupdate
+```
+
+This updates the hook versions in `.pre-commit-config.yaml` to the latest available versions.
 
 ## Troubleshooting
 

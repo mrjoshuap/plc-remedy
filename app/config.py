@@ -106,36 +106,112 @@ class ConfigLoader:
         self._config: Optional[AppConfig] = None
     
     def _substitute_env_vars(self, text: str) -> str:
-        """Substitute environment variables in format ${VAR_NAME}.
+        """Substitute environment variables in format ${VAR_NAME} or ${VAR_NAME:-default}.
+        
+        Supports shell-style default values: ${VAR_NAME:-default_value}
+        If the environment variable is not set, the default value is used.
         
         Args:
-            text: String potentially containing ${VAR_NAME} patterns
+            text: String potentially containing ${VAR_NAME} or ${VAR_NAME:-default} patterns
             
         Returns:
             String with environment variables substituted
         """
         def replace_var(match):
-            var_name = match.group(1)
-            return os.getenv(var_name, match.group(0))  # Return original if not found
+            var_expr = match.group(1)  # e.g., "VAR_NAME" or "VAR_NAME:-default"
+            
+            # Check if default value is specified
+            if ':-' in var_expr:
+                var_name, default_value = var_expr.split(':-', 1)
+                var_name = var_name.strip()
+                default_value = default_value.strip()
+                return os.getenv(var_name, default_value)
+            else:
+                var_name = var_expr.strip()
+                env_value = os.getenv(var_name)
+                if env_value is not None:
+                    return env_value
+                # Return original pattern if not found (for backward compatibility)
+                return match.group(0)
         
         pattern = r'\$\{([^}]+)\}'
         return re.sub(pattern, replace_var, text)
     
+    def _convert_value_type(self, value: Any) -> Any:
+        """Convert string value to appropriate type based on context.
+        
+        Handles conversion of environment variable strings to:
+        - Boolean: "true"/"True"/"TRUE"/"1" -> True, "false"/"False"/"FALSE"/"0"/"" -> False
+        - Integer: numeric strings -> int
+        - Float: numeric strings with decimal -> float
+        - List: comma-separated strings -> list
+        
+        Args:
+            value: Value to convert (usually a string from env var)
+            
+        Returns:
+            Converted value with appropriate type
+        """
+        if not isinstance(value, str):
+            return value
+        
+        value = value.strip()
+        
+        # Try boolean conversion first (common case)
+        if value.lower() in ('true', '1', 'yes', 'on'):
+            return True
+        if value.lower() in ('false', '0', 'no', 'off', ''):
+            return False
+        
+        # Try integer conversion (only if no decimal point)
+        if '.' not in value:
+            try:
+                return int(value)
+            except ValueError:
+                pass
+        
+        # Try float conversion
+        try:
+            return float(value)
+        except ValueError:
+            pass
+        
+        # Try list conversion (comma-separated)
+        if ',' in value:
+            return [item.strip() for item in value.split(',') if item.strip()]
+        
+        # Return as string if no conversion applies
+        return value
+    
     def _substitute_in_dict(self, data: Any) -> Any:
         """Recursively substitute environment variables in dict/list/str values.
+        
+        After substitution, attempts type conversion for common cases.
         
         Args:
             data: Data structure (dict, list, str, or other)
             
         Returns:
-            Data structure with environment variables substituted
+            Data structure with environment variables substituted and types converted
         """
         if isinstance(data, dict):
-            return {k: self._substitute_in_dict(v) for k, v in data.items()}
+            result = {}
+            for k, v in data.items():
+                substituted = self._substitute_in_dict(v)
+                # Convert value if it's a string that looks like a boolean/number/list
+                if isinstance(substituted, str):
+                    converted = self._convert_value_type(substituted)
+                    result[k] = converted
+                else:
+                    result[k] = substituted
+            return result
         elif isinstance(data, list):
             return [self._substitute_in_dict(item) for item in data]
         elif isinstance(data, str):
-            return self._substitute_env_vars(data)
+            substituted = self._substitute_env_vars(data)
+            # Convert if substitution occurred or if it's a simple value that needs conversion
+            converted = self._convert_value_type(substituted)
+            return converted
         else:
             return data
     
@@ -183,12 +259,18 @@ class ConfigLoader:
                 f"Invalid protocol_mode '{protocol_mode}'. Must be 'default' or 'serial'"
             )
         
+        # Values should already be converted by _substitute_in_dict, but ensure proper types
+        slot_val = plc_data.get('slot', 0)
+        timeout_val = plc_data.get('timeout', 5.0)
+        poll_interval_val = plc_data.get('poll_interval_ms', 1000)
+        mock_mode_val = plc_data.get('mock_mode', False)
+        
         return PLCConfig(
             ip_address=str(plc_data['ip_address']),
-            slot=int(plc_data.get('slot', 0)),
-            timeout=float(plc_data.get('timeout', 5.0)),
-            poll_interval_ms=int(plc_data.get('poll_interval_ms', 1000)),
-            mock_mode=bool(plc_data.get('mock_mode', False)),
+            slot=int(slot_val) if not isinstance(slot_val, (int, bool)) else slot_val,
+            timeout=float(timeout_val) if not isinstance(timeout_val, (float, int)) else float(timeout_val),
+            poll_interval_ms=int(poll_interval_val) if not isinstance(poll_interval_val, int) else poll_interval_val,
+            mock_mode=bool(mock_mode_val) if not isinstance(mock_mode_val, bool) else mock_mode_val,
             protocol_mode=protocol_mode
         )
     
@@ -252,13 +334,22 @@ class ConfigLoader:
         Returns:
             Validated AAPConfig instance
         """
+        # Convert job templates values to int
+        job_templates = {}
+        for key, value in aap_data.get('job_templates', {}).items():
+            job_templates[key] = int(value) if not isinstance(value, int) else value
+        
+        enabled_val = aap_data.get('enabled', True)
+        mock_mode_val = aap_data.get('mock_mode', True)
+        verify_ssl_val = aap_data.get('verify_ssl', True)
+        
         return AAPConfig(
-            enabled=bool(aap_data.get('enabled', True)),
-            mock_mode=bool(aap_data.get('mock_mode', True)),
+            enabled=bool(enabled_val) if not isinstance(enabled_val, bool) else enabled_val,
+            mock_mode=bool(mock_mode_val) if not isinstance(mock_mode_val, bool) else mock_mode_val,
             base_url=str(aap_data.get('base_url', '')),
-            verify_ssl=bool(aap_data.get('verify_ssl', True)),
+            verify_ssl=bool(verify_ssl_val) if not isinstance(verify_ssl_val, bool) else verify_ssl_val,
             token=str(aap_data.get('token', '')),
-            job_templates=dict(aap_data.get('job_templates', {}))
+            job_templates=job_templates
         )
     
     def _validate_remediation_config(self, remediation_data: Dict[str, Any]) -> RemediationConfig:
@@ -270,10 +361,14 @@ class ConfigLoader:
         Returns:
             Validated RemediationConfig instance
         """
+        auto_remediate_val = remediation_data.get('auto_remediate', False)
+        cooldown_val = remediation_data.get('cooldown_seconds', 30)
+        max_retries_val = remediation_data.get('max_retries', 3)
+        
         return RemediationConfig(
-            auto_remediate=bool(remediation_data.get('auto_remediate', False)),
-            cooldown_seconds=int(remediation_data.get('cooldown_seconds', 30)),
-            max_retries=int(remediation_data.get('max_retries', 3))
+            auto_remediate=bool(auto_remediate_val) if not isinstance(auto_remediate_val, bool) else auto_remediate_val,
+            cooldown_seconds=int(cooldown_val) if not isinstance(cooldown_val, int) else cooldown_val,
+            max_retries=int(max_retries_val) if not isinstance(max_retries_val, int) else max_retries_val
         )
     
     def _validate_chaos_config(self, chaos_data: Dict[str, Any]) -> ChaosConfig:
@@ -285,14 +380,29 @@ class ConfigLoader:
         Returns:
             Validated ChaosConfig instance
         """
-        return ChaosConfig(
-            enabled=bool(chaos_data.get('enabled', False)),
-            failure_injection_rate=float(chaos_data.get('failure_injection_rate', 0.05)),
-            failure_types=list(chaos_data.get('failure_types', [
+        enabled_val = chaos_data.get('enabled', False)
+        failure_injection_rate_val = chaos_data.get('failure_injection_rate', 0.05)
+        failure_types_val = chaos_data.get('failure_types', [
+            "value_anomaly", "network_timeout", "connection_loss", "service_crash"
+        ])
+        network_timeout_val = chaos_data.get('network_timeout_ms', 5000)
+        anomaly_duration_val = chaos_data.get('anomaly_duration_seconds', 10)
+        
+        # Handle failure_types - could be a list or comma-separated string (already converted by _substitute_in_dict)
+        if isinstance(failure_types_val, list):
+            failure_types_list = failure_types_val
+        else:
+            # Fallback for non-list values
+            failure_types_list = [
                 "value_anomaly", "network_timeout", "connection_loss", "service_crash"
-            ])),
-            network_timeout_ms=int(chaos_data.get('network_timeout_ms', 5000)),
-            anomaly_duration_seconds=int(chaos_data.get('anomaly_duration_seconds', 10))
+            ]
+        
+        return ChaosConfig(
+            enabled=bool(enabled_val) if not isinstance(enabled_val, bool) else enabled_val,
+            failure_injection_rate=float(failure_injection_rate_val) if not isinstance(failure_injection_rate_val, (float, int)) else float(failure_injection_rate_val),
+            failure_types=failure_types_list,
+            network_timeout_ms=int(network_timeout_val) if not isinstance(network_timeout_val, int) else network_timeout_val,
+            anomaly_duration_seconds=int(anomaly_duration_val) if not isinstance(anomaly_duration_val, int) else anomaly_duration_val
         )
     
     def _validate_dashboard_config(self, dashboard_data: Dict[str, Any]) -> DashboardConfig:
@@ -304,10 +414,14 @@ class ConfigLoader:
         Returns:
             Validated DashboardConfig instance
         """
+        refresh_interval_val = dashboard_data.get('refresh_interval_ms', 1000)
+        history_retention_val = dashboard_data.get('history_retention_hours', 24)
+        chart_data_points_val = dashboard_data.get('chart_data_points', 100)
+        
         return DashboardConfig(
-            refresh_interval_ms=int(dashboard_data.get('refresh_interval_ms', 1000)),
-            history_retention_hours=int(dashboard_data.get('history_retention_hours', 24)),
-            chart_data_points=int(dashboard_data.get('chart_data_points', 100))
+            refresh_interval_ms=int(refresh_interval_val) if not isinstance(refresh_interval_val, int) else refresh_interval_val,
+            history_retention_hours=int(history_retention_val) if not isinstance(history_retention_val, int) else history_retention_val,
+            chart_data_points=int(chart_data_points_val) if not isinstance(chart_data_points_val, int) else chart_data_points_val
         )
     
     def _validate_logging_config(self, logging_data: Dict[str, Any]) -> LoggingConfig:

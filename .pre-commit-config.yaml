@@ -1,0 +1,45 @@
+# Pre-commit hooks configuration
+# See https://pre-commit.com for more information
+
+repos:
+  # Built-in pre-commit hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-yaml
+        # Check all YAML variants including example and test files
+        files: \.(yaml|yml)(\.example|\.test)?$
+        args: [--unsafe]  # Allow custom tags for Ansible playbooks
+      - id: check-added-large-files
+        args: [--maxkb=1000]
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-json
+      - id: check-toml
+
+  # Python syntax checking with pyflakes
+  - repo: https://github.com/PyCQA/pyflakes
+    rev: 3.1.0
+    hooks:
+      - id: pyflakes
+        # Check all Python files
+        files: \.py$
+
+  # HTML syntax validation
+  - repo: https://github.com/validator/validator
+    rev: v23.11.0
+    hooks:
+      - id: html5validator
+        args: [--format=json]
+        # Check all HTML files
+        files: \.html$
+
+  # YAML linting with yamllint (more comprehensive than check-yaml)
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        # Check all YAML variants including example and test files
+        files: \.(yaml|yml)(\.example|\.test)?$
+        args: [-d, '{extends: default, rules: {line-length: {max: 200}, comments: {min-spaces-from-content: 1}}}']

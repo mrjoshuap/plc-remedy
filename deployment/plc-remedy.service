@@ -1,0 +1,64 @@
+[Unit]
+Description=PLC Self-Healing Middleware Container
+Documentation=https://github.com/mrjoshuap/plc-remedy
+After=network.target podman.service
+Requires=podman.service
+
+[Service]
+Type=simple
+
+# Container image name
+# Update this to match your image name/tag
+ExecStartPre=/usr/bin/rm -f %t/plc-remedy.pid %t/plc-remedy.ctr-id
+
+# Start the container
+# Adjust paths and image name as needed
+# --cidfile: store container ID for systemd management
+# --cgroups=split: use split cgroups (required for systemd integration)
+# --replace: replace existing container if it exists
+# --name: container name
+# -p: port mapping (host:container)
+# -v: volume mounts (config directory, read-only)
+# --env-file: load environment variables from file
+# Note: Healthcheck is defined in Containerfile and runs automatically
+ExecStart=/usr/bin/podman run \
+    --cidfile=%t/plc-remedy.ctr-id \
+    --cgroups=split \
+    --replace \
+    --name plc-remedy \
+    -p 15000:5000 \
+    -v /home/%u/plc-remedy/config:/app/config:ro \
+    --env-file=/home/%u/plc-remedy/plc-remedy.env \
+    plc-remedy:latest
+
+# Stop the container gracefully
+ExecStop=/usr/bin/podman stop \
+    --ignore \
+    --cidfile=%t/plc-remedy.ctr-id
+
+# Remove the container after stopping
+ExecStopPost=/usr/bin/podman rm \
+    --ignore \
+    -f \
+    --cidfile=%t/plc-remedy.ctr-id
+
+# Restart policy
+Restart=on-failure
+RestartSec=10
+
+# Timeout settings
+TimeoutStartSec=120
+TimeoutStopSec=30
+
+# PID file
+PIDFile=%t/plc-remedy.pid
+
+# Kill mode
+KillMode=none
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

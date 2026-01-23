@@ -98,7 +98,9 @@ def create_app():
     # Set template folder to app/templates
     template_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'app', 'templates')
     app = Flask(__name__, template_folder=template_dir)
-    app.config['SECRET_KEY'] = 'plc-remedy-secret-key-change-in-production'
+    # SECRET_KEY can be set via FLASK_SECRET_KEY environment variable
+    # Generate a random key if not set (for development only - production should always set this)
+    app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'plc-remedy-secret-key-change-in-production')
     
     # Initialize Socket.IO (assign to global)
     socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')

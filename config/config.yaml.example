@@ -1,74 +1,75 @@
 # PLC Self-Healing Middleware Configuration
 # Copy this file to config.yaml and customize for your environment
+# All values can be overridden via environment variables using ${VAR_NAME} syntax
+# See deployment/plc-remedy.env.example for all available environment variables
 
 plc:
-  ip_address: "192.168.1.100"  # PLC IP address
-  slot: 0                       # PLC slot number (typically 0)
-  timeout: 5.0                  # Connection timeout in seconds
-  poll_interval_ms: 1000        # Polling interval in milliseconds
-  mock_mode: false              # Set to true when using mock PLC to gracefully handle unsupported CIP services
-  protocol_mode: "default"      # Protocol mode: "default" (use pycomm3 default, may use MSP) or "serial" (disable MSP, use serial methods)
-                                # Note: mock_mode and protocol_mode are independent - mock_mode only sets micro800 override
+  ip_address: "${PLC_IP_ADDRESS:-192.168.1.100}"  # PLC IP address (env: PLC_IP_ADDRESS)
+  slot: ${PLC_SLOT:-0}                            # PLC slot number, typically 0 (env: PLC_SLOT)
+  timeout: ${PLC_TIMEOUT:-5.0}                    # Connection timeout in seconds (env: PLC_TIMEOUT)
+  poll_interval_ms: ${PLC_POLL_INTERVAL_MS:-1000} # Polling interval in milliseconds (env: PLC_POLL_INTERVAL_MS)
+  mock_mode: ${PLC_MOCK_MODE:-false}              # Set to true when using mock PLC (env: PLC_MOCK_MODE, use "true"/"false")
+  protocol_mode: "${PLC_PROTOCOL_MODE:-default}"  # Protocol mode: "default" or "serial" (env: PLC_PROTOCOL_MODE)
+                                                    # Note: mock_mode and protocol_mode are independent - mock_mode only sets micro800 override
 
 tags:
   # Light status tag - boolean
+  # Note: Tag-specific env vars use format TAG_<tag_key>_<field> (e.g., TAG_LIGHT_NAME, TAG_LIGHT_NOMINAL)
   light:
-    name: "Light_Status"         # PLC tag name
-    type: "bool"                 # Data type: bool, int, float
-    nominal: true                # Expected nominal value
-    failure_condition: "equals"  # Failure condition type
-    failure_value: false         # Value that indicates failure
+    name: "${TAG_LIGHT_NAME:-Light_Status}"         # PLC tag name (env: TAG_LIGHT_NAME)
+    type: "${TAG_LIGHT_TYPE:-bool}"                  # Data type: bool, int, float (env: TAG_LIGHT_TYPE)
+    nominal: ${TAG_LIGHT_NOMINAL:-true}              # Expected nominal value (env: TAG_LIGHT_NOMINAL, use "true"/"false" for bool)
+    failure_condition: "${TAG_LIGHT_FAILURE_CONDITION:-equals}"  # Failure condition type (env: TAG_LIGHT_FAILURE_CONDITION)
+    failure_value: ${TAG_LIGHT_FAILURE_VALUE:-false} # Value that indicates failure (env: TAG_LIGHT_FAILURE_VALUE, use "true"/"false" for bool)
 
   # Motor speed tag - integer with range
   motor_speed:
-    name: "Motor_Speed"
-    type: "int"
-    nominal: 1750                # Nominal RPM
-    failure_condition: "outside_range"  # Failure if outside range
-    failure_threshold_low: 1500  # Minimum acceptable value
-    failure_threshold_high: 2000  # Maximum acceptable value
+    name: "${TAG_MOTOR_SPEED_NAME:-Motor_Speed}"      # PLC tag name (env: TAG_MOTOR_SPEED_NAME)
+    type: "${TAG_MOTOR_SPEED_TYPE:-int}"             # Data type (env: TAG_MOTOR_SPEED_TYPE)
+    nominal: ${TAG_MOTOR_SPEED_NOMINAL:-1750}        # Nominal RPM (env: TAG_MOTOR_SPEED_NOMINAL)
+    failure_condition: "${TAG_MOTOR_SPEED_FAILURE_CONDITION:-outside_range}"  # Failure condition (env: TAG_MOTOR_SPEED_FAILURE_CONDITION)
+    failure_threshold_low: ${TAG_MOTOR_SPEED_FAILURE_THRESHOLD_LOW:-1500}  # Minimum acceptable value (env: TAG_MOTOR_SPEED_FAILURE_THRESHOLD_LOW)
+    failure_threshold_high: ${TAG_MOTOR_SPEED_FAILURE_THRESHOLD_HIGH:-2000}  # Maximum acceptable value (env: TAG_MOTOR_SPEED_FAILURE_THRESHOLD_HIGH)
 
   # Motor direction tag - integer
   motor_direction:
-    name: "Motor_Direction"
-    type: "int"                  # 0=stopped, 1=forward, 2=reverse
-    nominal: 1                   # Expected direction (forward)
-    failure_condition: "not_equals"  # Failure if not equal to nominal
-    failure_value: 1             # Not used for not_equals, but kept for consistency
+    name: "${TAG_MOTOR_DIRECTION_NAME:-Motor_Direction}"  # PLC tag name (env: TAG_MOTOR_DIRECTION_NAME)
+    type: "${TAG_MOTOR_DIRECTION_TYPE:-int}"              # Data type: 0=stopped, 1=forward, 2=reverse (env: TAG_MOTOR_DIRECTION_TYPE)
+    nominal: ${TAG_MOTOR_DIRECTION_NOMINAL:-1}            # Expected direction (forward) (env: TAG_MOTOR_DIRECTION_NOMINAL)
+    failure_condition: "${TAG_MOTOR_DIRECTION_FAILURE_CONDITION:-not_equals}"  # Failure condition (env: TAG_MOTOR_DIRECTION_FAILURE_CONDITION)
+    failure_value: ${TAG_MOTOR_DIRECTION_FAILURE_VALUE:-1} # Not used for not_equals, but kept for consistency (env: TAG_MOTOR_DIRECTION_FAILURE_VALUE)
 
 aap:
-  enabled: true                  # Enable AAP integration
-  mock_mode: true                # Use mock AAP responses (set to false for real AAP)
-  base_url: "https://aap.example.com"  # AAP base URL (only used if mock_mode=false)
-  verify_ssl: true               # Verify SSL certificates
-  token: "${AAP_TOKEN}"           # AAP authentication token (from environment variable)
+  enabled: ${AAP_ENABLED:-true}                    # Enable AAP integration (env: AAP_ENABLED, use "true"/"false")
+  mock_mode: ${AAP_MOCK_MODE:-true}               # Use mock AAP responses (env: AAP_MOCK_MODE, use "true"/"false")
+  base_url: "${AAP_BASE_URL:-https://aap.example.com}"  # AAP base URL (env: AAP_BASE_URL, only used if mock_mode=false)
+  verify_ssl: ${AAP_VERIFY_SSL:-true}             # Verify SSL certificates (env: AAP_VERIFY_SSL, use "true"/"false")
+  token: "${AAP_TOKEN:-}"                         # AAP authentication token (env: AAP_TOKEN)
   job_templates:
-    emergency_stop: 42           # Job template ID for emergency stop
-    emergency_reset: 43          # Job template ID for emergency reset
-    emergency_restart: 44        # Job template ID for emergency restart
-    gather_metrics: 45           # Job template ID for metrics gathering
+    emergency_stop: ${AAP_JOB_TEMPLATE_EMERGENCY_STOP:-42}    # Job template ID for emergency stop (env: AAP_JOB_TEMPLATE_EMERGENCY_STOP)
+    emergency_reset: ${AAP_JOB_TEMPLATE_EMERGENCY_RESET:-43}   # Job template ID for emergency reset (env: AAP_JOB_TEMPLATE_EMERGENCY_RESET)
+    emergency_restart: ${AAP_JOB_TEMPLATE_EMERGENCY_RESTART:-44}  # Job template ID for emergency restart (env: AAP_JOB_TEMPLATE_EMERGENCY_RESTART)
+    gather_metrics: ${AAP_JOB_TEMPLATE_GATHER_METRICS:-45}    # Job template ID for metrics gathering (env: AAP_JOB_TEMPLATE_GATHER_METRICS)
 
 remediation:
-  auto_remediate: false          # Automatically trigger remediation on violations (manual by default)
-  cooldown_seconds: 30           # Minimum time between remediations (seconds)
-  max_retries: 3                 # Maximum retry attempts for failed remediations
+  auto_remediate: ${REMEDIATION_AUTO_REMEDIATE:-false}  # Automatically trigger remediation on violations (env: REMEDIATION_AUTO_REMEDIATE, use "true"/"false")
+  cooldown_seconds: ${REMEDIATION_COOLDOWN_SECONDS:-30} # Minimum time between remediations in seconds (env: REMEDIATION_COOLDOWN_SECONDS)
+  max_retries: ${REMEDIATION_MAX_RETRIES:-3}           # Maximum retry attempts for failed remediations (env: REMEDIATION_MAX_RETRIES)
 
 chaos:
-  enabled: false                 # Enable chaos engineering (failure injection)
-  failure_injection_rate: 0.05    # Probability of failure injection per poll cycle (5%)
-  failure_types:
-    - value_anomaly              # Inject out-of-range values
-    - network_timeout            # Simulate network timeouts
-    - connection_loss            # Simulate connection loss
-    - service_crash              # Simulate service crash (use with caution!)
-  network_timeout_ms: 5000       # Timeout duration for network_timeout injection
-  anomaly_duration_seconds: 10   # Duration for connection_loss injection
+  enabled: ${CHAOS_ENABLED:-false}                    # Enable chaos engineering (env: CHAOS_ENABLED, use "true"/"false")
+  failure_injection_rate: ${CHAOS_FAILURE_INJECTION_RATE:-0.05}  # Probability of failure injection per poll cycle (env: CHAOS_FAILURE_INJECTION_RATE, 0.0-1.0)
+  failure_types: ${CHAOS_FAILURE_TYPES:-value_anomaly,network_timeout,connection_loss,service_crash}  # Comma-separated list (env: CHAOS_FAILURE_TYPES)
+    # Options: value_anomaly, network_timeout, connection_loss, service_crash
+    # Note: service_crash should be used with caution!
+  network_timeout_ms: ${CHAOS_NETWORK_TIMEOUT_MS:-5000}  # Timeout duration for network_timeout injection in ms (env: CHAOS_NETWORK_TIMEOUT_MS)
+  anomaly_duration_seconds: ${CHAOS_ANOMALY_DURATION_SECONDS:-10}  # Duration for connection_loss injection in seconds (env: CHAOS_ANOMALY_DURATION_SECONDS)
 
 dashboard:
-  refresh_interval_ms: 1000      # Dashboard refresh interval (milliseconds)
-  history_retention_hours: 24    # How long to retain historical data (hours)
-  chart_data_points: 100        # Number of data points to show in charts
+  refresh_interval_ms: ${DASHBOARD_REFRESH_INTERVAL_MS:-1000}      # Dashboard refresh interval in milliseconds (env: DASHBOARD_REFRESH_INTERVAL_MS)
+  history_retention_hours: ${DASHBOARD_HISTORY_RETENTION_HOURS:-24}  # How long to retain historical data in hours (env: DASHBOARD_HISTORY_RETENTION_HOURS)
+  chart_data_points: ${DASHBOARD_CHART_DATA_POINTS:-100}          # Number of data points to show in charts (env: DASHBOARD_CHART_DATA_POINTS)
 
 logging:
-  level: INFO                    # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"  # Log message format
+  level: "${LOGGING_LEVEL:-INFO}"  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL (env: LOGGING_LEVEL)
+  format: "${LOGGING_FORMAT:-%(asctime)s - %(name)s - %(levelname)s - %(message)s}"  # Log message format (env: LOGGING_FORMAT)

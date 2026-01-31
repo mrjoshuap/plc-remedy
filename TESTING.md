@@ -37,8 +37,7 @@ All logs are visible simultaneously. The script prevents detaching/reattaching -
    - You should see real-time updates from the mock PLC
 
 **Stopping the test environment:**
-- Press `Ctrl+C` in any pane, or
-- Type `exit` in any pane, or
+- Press `Ctrl+C` in any pane multiple times
 - Close the terminal window
 
 All processes will be automatically stopped when the tmux session ends.

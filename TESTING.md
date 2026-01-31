@@ -1,6 +1,6 @@
 # Testing Guide
 
-This guide explains how to test the PLC Self-Healing Middleware using all mock components.
+This guide explains how to test the PLC Self-Healing Middleware using all mock components.  It is not intended for testing or validation of the research, but to provide validation of the dashboard and other capabilities.  There is common verification steps that are reusable.
 
 ## Prerequisites
 

@@ -524,6 +524,12 @@
         });
 
         socket.on('threshold_violation', (data) => {
+            const tagName = data.tag_name || (data.data && data.data.tag_name);
+            const isResolved = data.data && data.data.resolved === true;
+            if (tagName && currentValues[tagName] !== undefined) {
+                currentValues[tagName].violation = !isResolved;
+            }
+            updateTagValues(currentValues);
             addEvent('threshold_violation', data);
             updateViolations();
         });
@@ -829,8 +835,9 @@
                     }
                 }
 
-                const status = result.success ? 'OK' : 'ERROR';
-                const badgeClass = result.success ? 'badge-success' : 'badge-error';
+                const hasViolation = result.violation || false;
+                const status = !result.success ? 'ERROR' : hasViolation ? 'VIOLATION' : 'OK';
+                const badgeClass = !result.success ? 'badge-error' : hasViolation ? 'badge-warning' : 'badge-success';
 
                 row.innerHTML = `
                     <td>${tagName}</td>
@@ -844,7 +851,8 @@
         }
 
         function updateTagValue(tagName, value, success) {
-            currentValues[tagName] = { value, success };
+            const existing = currentValues[tagName] || {};
+            currentValues[tagName] = { value, success, violation: existing.violation || false };
             updateTagValues(currentValues);
         }
 
@@ -963,6 +971,15 @@
                 } else {
                     listEl.innerHTML = '<div style="color: #666;">No active violations</div>';
                 }
+
+                // Sync violation flags to currentValues and re-render tag table
+                Object.values(currentValues).forEach(v => { if (v) v.violation = false; });
+                if (data.success && data.data.violations.length > 0) {
+                    data.data.violations.forEach(v => {
+                        if (currentValues[v.tag_name]) currentValues[v.tag_name].violation = true;
+                    });
+                }
+                updateTagValues(currentValues);
             } catch (error) {
                 console.error('Error updating violations:', error);
                 console.error('Error stack:', error.stack);

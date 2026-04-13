@@ -385,8 +385,9 @@ class MonitorService:
                 active_violation_keys = list(self._active_violations.keys())
                 logger.debug(f"Active violations before check: {active_violation_keys}")
 
-                if tag_name not in self._active_violations:
-                    # New violation
+                existing = self._active_violations.get(tag_name)
+                if existing is None or existing.resolved:
+                    # New violation (or re-violation after a resolved entry)
                     is_new_violation = True
                     self._total_violations += 1
                     violation_obj = ThresholdViolation(
@@ -402,7 +403,7 @@ class MonitorService:
                         del self._normal_readings_count[tag_name]
                     logger.info(f"New violation added to _active_violations for '{tag_name}'. Total active violations: {len(self._active_violations)}")
                 else:
-                    # Existing violation - reset normal reading count since we're still violating
+                    # Active (unresolved) violation - reset normal reading count since we're still violating
                     if tag_name in self._normal_readings_count:
                         self._normal_readings_count[tag_name] = 0
                     logger.debug(f"Violation already exists in _active_violations for '{tag_name}'")

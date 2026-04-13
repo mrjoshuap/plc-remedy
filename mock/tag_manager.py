@@ -151,7 +151,10 @@ class TagManager:
                 target = tag_data["failure_threshold_high"] + 10
                 return int(nominal + (target - nominal) * self.degradation_progress)
             else:
-                return int(nominal * (1.0 - self.degradation_progress * 0.3))
+                # No thresholds defined — hold at nominal until heavily degraded
+                if self.degradation_progress > 0.8:
+                    return tag_data.get("failure_value", 0)
+                return int(nominal)
         elif tag_type == "BOOL":
             # Eventually flip to failure value
             if self.degradation_progress > 0.8:

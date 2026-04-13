@@ -4,7 +4,7 @@ from unittest.mock import Mock, MagicMock, patch
 from datetime import datetime
 
 from app.monitor import MonitorService
-from app.config import AppConfig, PLCConfig, TagConfig, DashboardConfig, AAPConfig, RemediationConfig, ChaosConfig
+from app.config import AppConfig, PLCConfig, TagConfig, DashboardConfig, AAPConfig, RemediationConfig, ChaosConfig, LoggingConfig
 from app.plc_client import PLCClient
 from app.models import EventType
 
@@ -34,7 +34,8 @@ def app_config():
         aap=AAPConfig(),
         remediation=RemediationConfig(),
         chaos=ChaosConfig(),
-        dashboard=DashboardConfig()
+        dashboard=DashboardConfig(),
+        logging=LoggingConfig()
     )
 
 

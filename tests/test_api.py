@@ -4,7 +4,7 @@ from unittest.mock import Mock, MagicMock, patch
 from flask import Flask
 
 from app.api.routes import api, init_api
-from app.config import AppConfig, PLCConfig, TagConfig, DashboardConfig, AAPConfig, RemediationConfig, ChaosConfig
+from app.config import AppConfig, PLCConfig, TagConfig, DashboardConfig, AAPConfig, RemediationConfig, ChaosConfig, LoggingConfig
 from app.monitor import MonitorService
 from app.aap_client import AAPClient
 from app.chaos import ChaosEngine
@@ -29,7 +29,8 @@ def app_config():
         aap=AAPConfig(),
         remediation=RemediationConfig(),
         chaos=ChaosConfig(),
-        dashboard=DashboardConfig()
+        dashboard=DashboardConfig(),
+        logging=LoggingConfig()
     )
 
 
@@ -39,6 +40,7 @@ def mock_components(app_config):
     mock_plc = MagicMock(spec=PLCClient)
     mock_aap = MagicMock(spec=AAPClient)
     mock_monitor = MagicMock(spec=MonitorService)
+    mock_monitor.plc_client = MagicMock(spec=PLCClient)  # instance attr not in class spec
     mock_chaos = MagicMock(spec=ChaosEngine)
     mock_socketio = MagicMock(spec=SocketIO)
 

@@ -1,7 +1,14 @@
 """Ansible Automation Platform (AAP) API client."""
 import logging
+import os
 import time
 import uuid
+
+try:
+    import eventlet
+    EVENTLET_AVAILABLE = True
+except ImportError:
+    EVENTLET_AVAILABLE = False
 from datetime import datetime
 from typing import Dict, Any, Optional
 import requests
@@ -53,6 +60,9 @@ class AAPClient:
                 'Content-Type': 'application/json'
             })
 
+        # Track mock job metadata for stateful progression (mock_mode only)
+        self._mock_job_start_times: Dict[int, Dict[str, Any]] = {}
+
         # Log AAP client configuration
         if config.base_url:
             logger.info(f"AAP client configured: base_url={config.base_url}, mock_mode={config.mock_mode}, using HTTP requests")
@@ -74,12 +84,12 @@ class AAPClient:
         """
         # Use HTTP requests if base_url is configured (even in mock_mode for mock server)
         # Only use local simulation if no base_url is set
-        if self.config.base_url:
+        if self.config.mock_mode or not self.config.base_url:
+            logger.info(f"Launching AAP job template {job_template_id} via local simulation (mock_mode={self.config.mock_mode})")
+            return self._launch_mock_job(job_template_id, extra_vars)
+        else:
             logger.info(f"Launching AAP job template {job_template_id} via HTTP (base_url={self.config.base_url})")
             return self._launch_real_job(job_template_id, extra_vars)
-        else:
-            logger.info(f"Launching AAP job template {job_template_id} via local simulation (base_url not set)")
-            return self._launch_mock_job(job_template_id, extra_vars)
 
     def _launch_real_job(self, job_template_id: int, extra_vars: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Launch a real AAP job.
@@ -131,8 +141,14 @@ class AAPClient:
         Returns:
             Dictionary with mock job information
         """
-        # Generate a realistic job ID
         job_id = int(time.time() * 1000) % 1000000  # 6-digit job ID
+        seed = job_id % 1000
+
+        self._mock_job_start_times[job_id] = {
+            'start': time.time(),
+            'will_fail': seed < 50,   # ~5% failure rate, decided at launch time
+            'plc_reset_called': False,
+        }
 
         logger.info(f"Mock: Launched AAP job template {job_template_id}, mock job ID: {job_id}")
 
@@ -152,12 +168,10 @@ class AAPClient:
         Returns:
             Dictionary with job status information
         """
-        # Use HTTP requests if base_url is configured (even in mock_mode for mock server)
-        # Only use local simulation if no base_url is set
-        if self.config.base_url:
-            return self._get_real_job_status(job_id)
-        else:
+        if self.config.mock_mode or not self.config.base_url:
             return self._get_mock_job_status(job_id)
+        else:
+            return self._get_real_job_status(job_id)
 
     def _get_real_job_status(self, job_id: int) -> Dict[str, Any]:
         """Get status of a real AAP job.
@@ -208,26 +222,23 @@ class AAPClient:
         Returns:
             Dictionary with mock job status
         """
-        # Simulate job progression: pending -> running -> successful
-        # Use job_id as seed for deterministic behavior
-        seed = job_id % 1000
-        elapsed = int(time.time()) % 60  # Simulate elapsed time
+        job_meta = self._mock_job_start_times.get(job_id, {})
+        elapsed = time.time() - job_meta.get('start', time.time())
 
-        # Simple state machine based on elapsed time
-        if elapsed < 5:
+        if elapsed < 2:
             status = 'pending'
             finished = False
-        elif elapsed < 15:
+        elif elapsed < 5:
             status = 'running'
             finished = False
         else:
-            status = 'successful'
+            status = 'failed' if job_meta.get('will_fail', False) else 'successful'
             finished = True
 
-        # Occasionally simulate failures (5% chance)
-        if seed < 50:
-            status = 'failed'
-            finished = True
+        # On first successful completion simulate Ansible playbook remediation
+        if status == 'successful' and not job_meta.get('plc_reset_called', True):
+            job_meta['plc_reset_called'] = True
+            self._reset_mock_plc()
 
         return {
             'success': True,
@@ -237,6 +248,22 @@ class AAPClient:
             'failed': (status == 'failed'),
             'elapsed': elapsed
         }
+
+    def _reset_mock_plc(self) -> None:
+        """Simulate Ansible playbook remediation by resetting mock PLC to normal mode.
+
+        Calls the mock PLC's HTTP control API. Uses the PLC_CONTROL_URL environment
+        variable (default: http://127.0.0.1:18080) — same default as mock/mock_aap.py.
+        """
+        plc_control_url = os.environ.get('PLC_CONTROL_URL', 'http://127.0.0.1:18080')
+        try:
+            resp = self._session.post(f"{plc_control_url}/reset", timeout=2.0)
+            logger.info(
+                f"Mock AAP: Simulated remediation — reset mock PLC to NORMAL mode "
+                f"(HTTP {resp.status_code})"
+            )
+        except Exception as e:
+            logger.warning(f"Mock AAP: Failed to reset mock PLC at {plc_control_url}/reset: {e}")
 
     def get_job_output(self, job_id: int) -> str:
         """Get stdout output from an AAP job.
@@ -334,4 +361,7 @@ localhost                  : ok=1    changed=0    unreachable=0    failed=0
                     'error': f'Job did not complete within {timeout} seconds'
                 }
 
-            time.sleep(poll_interval)
+            if EVENTLET_AVAILABLE:
+                eventlet.sleep(poll_interval)
+            else:
+                time.sleep(poll_interval)

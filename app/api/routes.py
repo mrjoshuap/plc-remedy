@@ -169,12 +169,8 @@ def get_metrics():
 
 @api.route('/metrics/history', methods=['GET'])
 def get_metrics_history():
-    """Get historical metrics (placeholder - in-memory only for now)."""
-    # In future, this would query a database
-    return _api_response(True, {
-        'message': 'Historical metrics not yet implemented (in-memory storage only)',
-        'data': []
-    })
+    """Get historical metrics (not implemented - in-memory storage only)."""
+    return _api_response(False, None, 'Historical metrics not yet implemented (in-memory storage only)', 501)
 
 
 # Events & Logs Endpoints
@@ -219,10 +215,6 @@ def get_violations():
         violations = _monitor.get_active_violations()
         logger.debug(f"/events/violations returning: count={len(violations)}, active_only={active_only}")
 
-        if not active_only:
-            # Include resolved violations (would need to track these separately)
-            pass
-
         return _api_response(True, {
             'violations': [v.to_dict() for v in violations],
             'count': len(violations)
@@ -234,12 +226,8 @@ def get_violations():
 
 @api.route('/logs', methods=['GET'])
 def get_logs():
-    """Get application logs (placeholder)."""
-    # In a real implementation, this would read from log files
-    return _api_response(True, {
-        'message': 'Log retrieval not yet implemented',
-        'logs': []
-    })
+    """Get application logs (not implemented)."""
+    return _api_response(False, None, 'Log retrieval not yet implemented', 501)
 
 
 # Remediation Endpoints
@@ -433,10 +421,17 @@ def get_remediation_status():
                             try:
                                 tag_name = job['tag_name']
                                 logger.info(f"Attempting to clear violation for tag_name='{tag_name}' after successful remediation job {job_id}")
+                                if _chaos_engine:
+                                    _chaos_engine.cancel_anomaly(tag_name)
                                 _monitor.clear_violation(tag_name)
                                 logger.info(f"Cleared violation for '{tag_name}' after successful remediation job {job_id}")
                             except Exception as e:
                                 logger.warning(f"Error clearing violation for {job['tag_name']}: {e}", exc_info=True)
+                            if _socketio and _chaos_engine:
+                                try:
+                                    _socketio.emit('chaos_status_update', _chaos_engine.get_status())
+                                except Exception as e:
+                                    logger.warning(f"Error emitting chaos_status_update: {e}")
                 except Exception as e:
                     logger.warning(f"Error checking AAP job status: {e}")
 
@@ -544,10 +539,17 @@ def get_remediation_status():
                         try:
                             tag_name = job['tag_name']
                             logger.info(f"Attempting to clear violation for tag_name='{tag_name}' after successful remediation job {job_id}")
+                            if _chaos_engine:
+                                _chaos_engine.cancel_anomaly(tag_name)
                             _monitor.clear_violation(tag_name)
                             logger.info(f"Cleared violation for '{tag_name}' after successful remediation job {job_id}")
                         except Exception as e:
                             logger.warning(f"Error clearing violation for {job.get('tag_name')}: {e}", exc_info=True)
+                        if _socketio and _chaos_engine:
+                            try:
+                                _socketio.emit('chaos_status_update', _chaos_engine.get_status())
+                            except Exception as e:
+                                logger.warning(f"Error emitting chaos_status_update: {e}")
             except Exception as e:
                 logger.warning(f"Error checking AAP job status for job {job_id}: {e}")
 
@@ -610,7 +612,8 @@ def inject_chaos():
         return _api_response(False, None, 'Missing required parameter: failure_type', 400)
 
     try:
-        result = _chaos_engine.inject_failure(failure_type, **data)
+        kwargs = {k: v for k, v in data.items() if k != 'failure_type'}
+        result = _chaos_engine.inject_failure(failure_type, **kwargs)
 
         if result.get('success'):
             # Emit event

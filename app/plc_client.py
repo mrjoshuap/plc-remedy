@@ -33,7 +33,6 @@ class PLCClient:
             connected=False,
             connection_start_time=None
         )
-        self._last_error: Optional[str] = None
 
     def connect(self) -> bool:
         """Establish connection to PLC.
@@ -156,7 +155,6 @@ class PLCClient:
                         if self._driver is not None:
                             self._driver = None
                         self._stats.connected = False
-                        self._last_error = f"Mock PLC limitation: {error_msg[:200]}"
                         return False
 
                 # For real PLCs or non-mock-mode, treat all errors as fatal

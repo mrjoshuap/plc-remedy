@@ -305,6 +305,7 @@
                     <span class="slider"></span>
                 </label>
                 <span style="margin-left: 1rem;">Enable Chaos Injection</span>
+                <span id="plc-mode-label" style="margin-left: 1rem; font-size: 0.85rem; color: #888;"></span>
             </div>
             <div style="margin-bottom: 1rem;">
                 <label>Injection Rate: <span id="injection-rate-value">5%</span></label><br>
@@ -546,6 +547,17 @@
             addEvent('chaos_injection', data);
         });
 
+        socket.on('chaos_status_update', (data) => {
+            const plcMode = data.plc_mode;
+            if (plcMode !== null && plcMode !== undefined) {
+                document.getElementById('chaos-enabled').checked = plcMode !== 'normal';
+                const modeLabel = document.getElementById('plc-mode-label');
+                if (modeLabel) modeLabel.textContent = `(PLC: ${plcMode})`;
+            } else {
+                document.getElementById('chaos-enabled').checked = data.enabled;
+            }
+        });
+
         // API functions
         async function loadInitialData() {
             console.log('loadInitialData() started');
@@ -660,7 +672,14 @@
                 if (chaosRes.ok) {
                     const chaosData = await chaosRes.json();
                     if (chaosData.success) {
-                        document.getElementById('chaos-enabled').checked = chaosData.data.enabled;
+                        const plcMode = chaosData.data.plc_mode;
+                        if (plcMode !== null && plcMode !== undefined) {
+                            document.getElementById('chaos-enabled').checked = plcMode !== 'normal';
+                            const modeLabel = document.getElementById('plc-mode-label');
+                            if (modeLabel) modeLabel.textContent = `(PLC: ${plcMode})`;
+                        } else {
+                            document.getElementById('chaos-enabled').checked = chaosData.data.enabled;
+                        }
                         document.getElementById('injection-rate').value = chaosData.data.failure_injection_rate * 100;
                         updateInjectionRate(chaosData.data.failure_injection_rate * 100);
                     }
@@ -1016,6 +1035,10 @@
                 .then(res => res.json())
                 .then(data => {
                     console.log('Chaos toggled:', data);
+                    if (data.success && data.data && data.data.plc_mode !== undefined) {
+                        const modeLabel = document.getElementById('plc-mode-label');
+                        if (modeLabel) modeLabel.textContent = `(PLC: ${data.data.plc_mode})`;
+                    }
                 });
         }
 

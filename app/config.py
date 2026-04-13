@@ -59,6 +59,7 @@ class ChaosConfig:
     ])
     network_timeout_ms: int = 5000
     anomaly_duration_seconds: int = 10
+    plc_control_url: Optional[str] = None  # HTTP URL of mock PLC control API
 
 
 @dataclass
@@ -387,6 +388,7 @@ class ConfigLoader:
         ])
         network_timeout_val = chaos_data.get('network_timeout_ms', 5000)
         anomaly_duration_val = chaos_data.get('anomaly_duration_seconds', 10)
+        plc_control_url_val = chaos_data.get('plc_control_url', None)
 
         # Handle failure_types - could be a list or comma-separated string (already converted by _substitute_in_dict)
         if isinstance(failure_types_val, list):
@@ -402,7 +404,8 @@ class ConfigLoader:
             failure_injection_rate=float(failure_injection_rate_val) if not isinstance(failure_injection_rate_val, (float, int)) else float(failure_injection_rate_val),
             failure_types=failure_types_list,
             network_timeout_ms=int(network_timeout_val) if not isinstance(network_timeout_val, int) else network_timeout_val,
-            anomaly_duration_seconds=int(anomaly_duration_val) if not isinstance(anomaly_duration_val, int) else anomaly_duration_val
+            anomaly_duration_seconds=int(anomaly_duration_val) if not isinstance(anomaly_duration_val, int) else anomaly_duration_val,
+            plc_control_url=str(plc_control_url_val) if plc_control_url_val else None
         )
 
     def _validate_dashboard_config(self, dashboard_data: Dict[str, Any]) -> DashboardConfig:

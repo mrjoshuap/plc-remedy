@@ -141,10 +141,14 @@ def create_app():
         logger.info("Initializing monitor service...")
         monitor_service = MonitorService(config, plc_client, socketio)
 
-        # Set chaos injection hook
-        chaos_hook = chaos_engine.get_injection_hook()
-        if chaos_hook:
-            monitor_service.set_chaos_hook(chaos_hook)
+        # Set chaos injection hook — only wire monitor-layer hook when no PLC-layer control is configured
+        if not config.chaos.plc_control_url:
+            chaos_hook = chaos_engine.get_injection_hook()
+            if chaos_hook:
+                monitor_service.set_chaos_hook(chaos_hook)
+                logger.info("Chaos: Using monitor-layer hook (no plc_control_url configured)")
+        else:
+            logger.info(f"Chaos: PLC-layer injection configured at {config.chaos.plc_control_url}")
 
         # Set remediation hook for auto-remediation
         def remediation_hook(action: str, tag_name: Optional[str] = None) -> None:

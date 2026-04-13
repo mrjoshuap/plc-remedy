@@ -2,9 +2,13 @@
 from flask import Flask, request, jsonify
 from waitress import serve
 import logging
+import os
 import random
+import threading
 import time
 from datetime import datetime
+
+PLC_CONTROL_URL = os.environ.get('PLC_CONTROL_URL', 'http://127.0.0.1:18080')
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -13,6 +17,19 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+
+def _reset_plc():
+    """Reset mock PLC to NORMAL mode — simulates successful remediation."""
+    if not PLC_CONTROL_URL:
+        return
+    try:
+        import requests
+        resp = requests.post(f"{PLC_CONTROL_URL}/reset", timeout=2.0)
+        logger.info(f"Mock AAP: Reset PLC to NORMAL mode (HTTP {resp.status_code})")
+    except Exception as e:
+        logger.warning(f"Mock AAP: Failed to reset PLC: {e}")
+
 
 # In-memory job storage
 _jobs = {}
@@ -85,6 +102,8 @@ def get_job(job_id):
                 job['status'] = 'successful'
             job['finished'] = datetime.now().isoformat()
             logger.info(f"Job {job_id} transitioned from running to {job['status']} (elapsed: {elapsed_seconds:.1f}s)")
+            # Simulate remediation: reset the mock PLC to normal operation
+            threading.Thread(target=_reset_plc, daemon=True).start()
 
     # Log status if it changed
     if old_status != job['status']:

@@ -3,6 +3,18 @@ import logging
 import random
 import time
 import threading
+
+try:
+    import requests as _requests
+    REQUESTS_AVAILABLE = True
+except ImportError:
+    REQUESTS_AVAILABLE = False
+
+try:
+    import eventlet
+    EVENTLET_AVAILABLE = True
+except ImportError:
+    EVENTLET_AVAILABLE = False
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, Callable
 from enum import Enum
@@ -54,6 +66,9 @@ class ChaosEngine:
 
         # Track last injection time per tag for cooldown
         self._last_injection_time: Dict[str, datetime] = {}
+
+        # PLC-layer control URL (None = use monitor-layer fallback)
+        self._plc_control_url = config.plc_control_url
 
         # Connection loss simulation
         self._connection_lost = False
@@ -107,6 +122,9 @@ class ChaosEngine:
         with self._lock:
             self._enabled = True
             logger.info("Chaos injection enabled")
+        current_mode = self.get_plc_mode()
+        if current_mode == 'normal':
+            self._set_plc_mode('degraded')
 
     def disable(self) -> None:
         """Disable chaos injection."""
@@ -118,6 +136,7 @@ class ChaosEngine:
             self._last_injection_time.clear()
             self._connection_lost = False
             logger.info("Chaos injection disabled")
+        self._set_plc_mode('normal')
 
     def get_injection_hook(self) -> Optional[Callable[[str, Any], Any]]:
         """Get the injection hook function for the monitor.
@@ -129,6 +148,87 @@ class ChaosEngine:
             return None
 
         return self._inject_value_anomaly
+
+    def get_plc_mode(self) -> Optional[str]:
+        """Get the current mock PLC operating mode via control API.
+
+        Returns:
+            Mode string (e.g. 'normal', 'degraded', 'failed') or None if unavailable
+        """
+        if not self._plc_control_url or not REQUESTS_AVAILABLE:
+            return None
+        try:
+            resp = _requests.get(f"{self._plc_control_url}/mode", timeout=2.0)
+            resp.raise_for_status()
+            return resp.json().get('mode')
+        except Exception as e:
+            logger.warning(f"Chaos: Failed to get PLC mode: {e}")
+            return None
+
+    def _set_plc_mode(self, mode: str) -> bool:
+        """Set the mock PLC operating mode via HTTP control API.
+
+        Args:
+            mode: Target mode string (e.g. 'failed', 'normal')
+
+        Returns:
+            True on success, False on any error
+        """
+        if not self._plc_control_url or not REQUESTS_AVAILABLE:
+            return False
+        try:
+            resp = _requests.put(
+                f"{self._plc_control_url}/mode",
+                json={'mode': mode},
+                timeout=2.0
+            )
+            resp.raise_for_status()
+            logger.info(f"Chaos: Set PLC mode to '{mode}' via control API")
+            return True
+        except Exception as e:
+            logger.warning(f"Chaos: Failed to set PLC mode to '{mode}': {e}")
+            return False
+
+    def _schedule_plc_reset(self, tag_name: str, duration: int) -> None:
+        """Schedule a PLC reset to NORMAL mode after duration seconds.
+
+        Args:
+            tag_name: Tag that triggered the injection (for anomaly cleanup)
+            duration: Seconds to wait before resetting
+        """
+        def _reset():
+            if EVENTLET_AVAILABLE:
+                eventlet.sleep(duration)
+            else:
+                time.sleep(duration)
+            with self._lock:
+                if tag_name in self._active_value_anomalies:
+                    del self._active_value_anomalies[tag_name]
+            self._set_plc_mode('normal')
+            logger.info(f"Chaos: PLC reset to NORMAL after {duration}s anomaly on {tag_name}")
+
+        if EVENTLET_AVAILABLE:
+            eventlet.spawn(_reset)
+        else:
+            threading.Thread(target=_reset, daemon=True).start()
+
+    def cancel_anomaly(self, tag_name: str) -> None:
+        """Cancel an active anomaly immediately (e.g. when remediation completes).
+
+        For PLC-layer anomalies, also resets the mock PLC to normal mode.
+
+        Args:
+            tag_name: Config key of the tag whose anomaly should be cancelled
+        """
+        injected_via = None
+        with self._lock:
+            if tag_name in self._active_value_anomalies:
+                injected_via = self._active_value_anomalies[tag_name].get('injected_via')
+                del self._active_value_anomalies[tag_name]
+                logger.info(f"Chaos: Cancelled active anomaly for '{tag_name}' (was {injected_via})")
+
+        if injected_via == 'plc_layer' and self._plc_control_url:
+            self._set_plc_mode('normal')
 
     def _inject_value_anomaly(self, tag_name: str, value: Any) -> Any:
         """Inject value anomaly into tag read.
@@ -152,8 +252,11 @@ class ChaosEngine:
             if tag_name in self._active_value_anomalies:
                 anomaly = self._active_value_anomalies[tag_name]
                 if datetime.now() < anomaly['end_time']:
-                    # Still active, return injected value
-                    return anomaly['injected_value']
+                    # Still active — return injected value for monitor-layer, or original for plc-layer
+                    if 'injected_value' in anomaly:
+                        return anomaly['injected_value']
+                    else:
+                        return value  # plc-layer: PLC generates the bad values
                 else:
                     # Expired, remove and return original
                     del self._active_value_anomalies[tag_name]
@@ -178,6 +281,31 @@ class ChaosEngine:
 
         tag_config = self.app_config.tags[tag_name]
 
+        # PLC-layer path: delegate fault to the mock PLC itself
+        if self._plc_control_url:
+            success = self._set_plc_mode('failed')
+            if success:
+                duration = random.randint(1, self.config.anomaly_duration_seconds)
+                injection_id = f"{tag_name}_{int(time.time() * 1000)}"
+                with self._lock:
+                    self._active_value_anomalies[tag_name] = {
+                        'injected_via': 'plc_layer',
+                        'end_time': datetime.now() + timedelta(seconds=duration),
+                        'duration_seconds': duration
+                    }
+                    self._last_injection_time[tag_name] = datetime.now()
+                    self._injection_history.append({
+                        'id': injection_id,
+                        'tag_name': tag_name,
+                        'failure_type': FailureType.VALUE_ANOMALY.value,
+                        'injected_via': 'plc_layer',
+                        'timestamp': datetime.now().isoformat()
+                    })
+                self._schedule_plc_reset(tag_name, duration)
+                logger.warning(f"Chaos: PLC-layer fault injected for {tag_name} (duration: {duration}s)")
+            return value  # Return UNMODIFIED — PLC generates the bad values
+
+        # Monitor-layer fallback: modify value in-process
         # Inject anomaly based on tag type
         if tag_config.type == 'bool':
             # Flip boolean value
@@ -212,8 +340,11 @@ class ChaosEngine:
             if tag_name in self._active_value_anomalies:
                 anomaly = self._active_value_anomalies[tag_name]
                 if datetime.now() < anomaly['end_time']:
-                    # Another thread already injected, use that value
-                    return anomaly['injected_value']
+                    # Another thread already injected
+                    if 'injected_value' in anomaly:
+                        return anomaly['injected_value']
+                    else:
+                        return value  # plc-layer entry
                 else:
                     # Previous anomaly expired, remove it
                     del self._active_value_anomalies[tag_name]
@@ -271,13 +402,21 @@ class ChaosEngine:
 
         logger.warning(f"Chaos: Injected network timeout for {duration}ms")
 
-        # Sleep to simulate timeout (in a real implementation, this would
-        # be handled differently - perhaps by modifying the PLC client)
-        time.sleep(duration / 1000.0)
+        # Restore injection state in a background greenlet/thread to avoid
+        # blocking the HTTP handler (or event loop) for the duration.
+        def _restore():
+            if EVENTLET_AVAILABLE:
+                eventlet.sleep(duration / 1000.0)
+            else:
+                time.sleep(duration / 1000.0)
+            with self._lock:
+                if injection_id in self._active_injections:
+                    del self._active_injections[injection_id]
 
-        with self._lock:
-            if injection_id in self._active_injections:
-                del self._active_injections[injection_id]
+        if EVENTLET_AVAILABLE:
+            eventlet.spawn(_restore)
+        else:
+            threading.Thread(target=_restore, daemon=True).start()
 
     def inject_connection_loss(self, duration_seconds: Optional[int] = None) -> None:
         """Inject connection loss.
@@ -406,6 +545,8 @@ class ChaosEngine:
         Returns:
             Dictionary with current status
         """
+        # Fetch PLC mode outside the lock — HTTP request must not block _lock
+        plc_mode = self.get_plc_mode()
         with self._lock:
             in_grace_period = self._is_in_grace_period()
             grace_period_remaining = self._get_grace_period_remaining()
@@ -430,5 +571,6 @@ class ChaosEngine:
                 'recent_injections': self._injection_history[-10:] if self._injection_history else [],
                 'in_grace_period': in_grace_period,
                 'grace_period_remaining_seconds': round(grace_period_remaining, 1) if in_grace_period else 0.0,
-                'tags_in_cooldown': len([tag for tag in self._last_injection_time.keys() if self._is_tag_in_cooldown(tag)])
+                'tags_in_cooldown': len([tag for tag in self._last_injection_time.keys() if self._is_tag_in_cooldown(tag)]),
+                'plc_mode': plc_mode
             }

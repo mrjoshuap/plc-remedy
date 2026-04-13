@@ -7,6 +7,12 @@ import time
 from typing import Optional
 
 try:
+    from flask import Flask, request, jsonify
+    FLASK_AVAILABLE = True
+except ImportError:
+    FLASK_AVAILABLE = False
+
+try:
     from cpppo.server.enip import device
     from cpppo.server.enip import get_attribute
     CPPPO_AVAILABLE = True
@@ -24,22 +30,12 @@ except ImportError:
     from cip_objects import TagObject, ConnectionManager, IdentityObject
     from cip_services import CIPServiceHandler
 
-# Set logging level for all relevant modules
+_log_level = getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO)
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=_log_level,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-# Also set DEBUG for cpppo-related modules
-logging.getLogger('cpppo').setLevel(logging.DEBUG)
-logging.getLogger('mock.cip_objects').setLevel(logging.DEBUG)
-logging.getLogger('mock.cip_services').setLevel(logging.DEBUG)
-logging.getLogger('mock.tag_manager').setLevel(logging.DEBUG)
-# Handle relative import paths
-logging.getLogger('cip_objects').setLevel(logging.DEBUG)
-logging.getLogger('cip_services').setLevel(logging.DEBUG)
-logging.getLogger('tag_manager').setLevel(logging.DEBUG)
 
 
 # Global tag manager (set by CIPPLC instance before starting server)
@@ -103,54 +99,32 @@ class ModeAwareAttribute(device.Attribute):
         """
         global _global_tag_manager
 
-        logger.debug(f"ModeAwareAttribute.__getitem__ called for {self.tag_name} with key={key}")
-
         if _global_tag_manager is None:
             logger.warning(f"Tag manager not set for {self.tag_name}")
-            default_value = 0 if not isinstance(key, slice) else [0]
-            logger.debug(f"Returning default value {default_value} for {self.tag_name} (no tag manager)")
-            return default_value
+            return 0 if not isinstance(key, slice) else [0]
 
         try:
-            logger.debug(f"Retrieving tag value for {self.tag_name} from tag manager")
             value = _global_tag_manager.get_tag_value(self.tag_name)
-            logger.debug(f"Attribute read {self.tag_name}: {value} (type: {type(value).__name__})")
-
-            # If key is a slice, return a list (cpppo expects iterable for slices)
             if isinstance(key, slice):
-                # Return a list with the value (for scalar tags, just one element)
-                result = [value]
-                logger.debug(f"Returning slice result for {self.tag_name}: {result}")
-                return result
-            else:
-                # Single index access, return the value directly
-                logger.debug(f"Returning single value for {self.tag_name}: {value}")
-                return value
+                return [value]
+            return value
         except KeyError:
             logger.warning(f"Tag {self.tag_name} not found in tag manager")
-            default_value = 0 if not isinstance(key, slice) else [0]
-            logger.debug(f"Returning default value {default_value} for {self.tag_name} (KeyError)")
-            return default_value
+            return 0 if not isinstance(key, slice) else [0]
         except Exception as e:
             logger.error(f"Error reading tag {self.tag_name}: {e}", exc_info=True)
-            default_value = 0 if not isinstance(key, slice) else [0]
-            logger.debug(f"Returning default value {default_value} for {self.tag_name} (exception)")
-            return default_value
+            return 0 if not isinstance(key, slice) else [0]
 
     def __setitem__(self, key, value):
         """Set tag value."""
         global _global_tag_manager
-
-        logger.debug(f"ModeAwareAttribute.__setitem__ called for {self.tag_name} with key={key}, value={value} (type: {type(value).__name__})")
 
         if _global_tag_manager is None:
             logger.warning(f"Tag manager not set for {self.tag_name}")
             return
 
         try:
-            logger.debug(f"Setting tag value for {self.tag_name} via tag manager")
             _global_tag_manager.set_tag_value(self.tag_name, value)
-            logger.debug(f"Attribute write {self.tag_name}: {value} (type: {type(value).__name__}) - success")
         except Exception as e:
             logger.error(f"Failed to set tag {self.tag_name}: {e}", exc_info=True)
 
@@ -159,13 +133,15 @@ class CIPPLC:
     """Full CIP protocol-compatible PLC simulator."""
 
     def __init__(self, ip: str = "0.0.0.0", port: int = 44818,
-                 mode: OperatingMode = OperatingMode.NORMAL):
+                 mode: OperatingMode = OperatingMode.NORMAL,
+                 control_port: int = 18080):
         """Initialize CIP PLC simulator.
 
         Args:
             ip: IP address to bind to
             port: Port to listen on (CIP default is 44818)
             mode: Operating mode
+            control_port: Port for HTTP control API
         """
         if not CPPPO_AVAILABLE:
             raise ImportError("cpppo is required. Please install dependencies from requirements.txt or see documentation for setup instructions.")
@@ -173,6 +149,7 @@ class CIPPLC:
         self.ip = ip
         self.port = port
         self.mode = mode
+        self.control_port = control_port
         self.running = False
 
         # Initialize components
@@ -191,6 +168,7 @@ class CIPPLC:
         self.server_thread: Optional[threading.Thread] = None
         self.watchdog_thread: Optional[threading.Thread] = None
         self.stats_logger_thread: Optional[threading.Thread] = None
+        self._control_server_thread: Optional[threading.Thread] = None
 
     def start(self):
         """Start the CIP PLC server."""
@@ -220,6 +198,15 @@ class CIPPLC:
                 daemon=True
             )
             self.stats_logger_thread.start()
+
+            # Start HTTP control API thread
+            if FLASK_AVAILABLE:
+                self._control_server_thread = threading.Thread(
+                    target=self._run_control_server, daemon=True, name='plc-control-api'
+                )
+                self._control_server_thread.start()
+            else:
+                logger.warning("Flask not available; HTTP control API disabled")
 
             # Give server time to start
             time.sleep(1)
@@ -363,6 +350,54 @@ class CIPPLC:
             except Exception as e:
                 logger.warning(f"Error getting CIP PLC statistics: {e}")
 
+    def build_control_app(self) -> 'Flask':
+        """Build the Flask control API application.
+
+        Returns:
+            Configured Flask app for the control API
+        """
+        control_app = Flask(__name__ + '.control')
+
+        plc_ref = self  # Capture reference for closures
+
+        @control_app.route('/health', methods=['GET'])
+        def health():
+            return jsonify({'status': 'ok', 'mode': plc_ref.mode.value})
+
+        @control_app.route('/mode', methods=['GET'])
+        def get_mode():
+            return jsonify({'mode': plc_ref.mode.value})
+
+        @control_app.route('/mode', methods=['PUT'])
+        def set_mode_endpoint():
+            data = request.get_json(silent=True) or {}
+            mode_str = data.get('mode', '')
+            try:
+                new_mode = OperatingMode(mode_str)
+            except ValueError:
+                valid = [m.value for m in OperatingMode]
+                return jsonify({'error': f"Invalid mode '{mode_str}'. Valid: {valid}"}), 400
+            plc_ref.set_mode(new_mode)
+            return jsonify({'mode': plc_ref.mode.value})
+
+        @control_app.route('/reset', methods=['POST'])
+        def reset_mode():
+            plc_ref.set_mode(OperatingMode.NORMAL)
+            return jsonify({'mode': plc_ref.mode.value})
+
+        return control_app
+
+    def _run_control_server(self):
+        """Run the HTTP control API server."""
+        try:
+            from werkzeug.serving import run_simple
+            control_app = self.build_control_app()
+            logger.info(f"CIP PLC control API starting on 0.0.0.0:{self.control_port}")
+            run_simple('0.0.0.0', self.control_port, control_app,
+                       threaded=True, use_reloader=False)
+        except Exception as e:
+            logger.error(f"Control API server error: {e}", exc_info=True)
+
     def set_mode(self, mode: OperatingMode):
         """Change operating mode.
 
@@ -399,13 +434,15 @@ def main():
     parser = argparse.ArgumentParser(description="CIP-Compatible Mock PLC Simulator")
     parser.add_argument("--ip", default="0.0.0.0", help="IP address to bind to")
     parser.add_argument("--port", type=int, default=44818, help="Port to listen on")
+    parser.add_argument("--control-port", type=int, default=18080,
+                        help="Port for HTTP control API (default: 18080)")
     parser.add_argument("--mode", choices=["normal", "degraded", "failed", "unresponsive"],
                      default="normal", help="Operating mode")
 
     args = parser.parse_args()
 
     mode = OperatingMode(args.mode)
-    cip_plc = CIPPLC(ip=args.ip, port=args.port, mode=mode)
+    cip_plc = CIPPLC(ip=args.ip, port=args.port, mode=mode, control_port=args.control_port)
 
     try:
         cip_plc.start()

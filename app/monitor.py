@@ -422,33 +422,53 @@ class MonitorService:
             if is_new_violation:
                 logger.info(f"New violation detected for {tag_name}: {violation_reason}")
 
-            # INFO level logging for auto-remediation conditions
-            logger.info(f"Auto-remediation check for {tag_name}:")
-            logger.info(f"  - is_new_violation: {is_new_violation}")
-            logger.info(f"  - auto_remediate config: {self.config.remediation.auto_remediate}")
-            logger.info(f"  - remediation_hook set: {self._remediation_hook is not None}")
+            # DEBUG level logging for auto-remediation conditions
+            logger.debug(f"Auto-remediation check for {tag_name}:")
+            logger.debug(f"  - is_new_violation: {is_new_violation}")
+            logger.debug(f"  - auto_remediate config: {self.config.remediation.auto_remediate}")
+            logger.debug(f"  - remediation_hook set: {self._remediation_hook is not None}")
 
             # Trigger auto-remediation if enabled and this is a new violation
             if is_new_violation and self.config.remediation.auto_remediate and self._remediation_hook:
+                # Capture locals so the spawned greenlet/thread does not close over
+                # a loop variable that may change before it executes.
+                hook = self._remediation_hook
+                _tag = tag_name
+
+                def _run_remediation(action: str, tag: str) -> None:
+                    try:
+                        logger.info(
+                            f"Auto-remediation enabled: triggering {action} for violation on {tag}"
+                        )
+                        hook(action, tag)
+                        logger.debug(f"Auto-remediation hook completed for {tag}")
+                    except Exception as e:
+                        logger.error(f"Error in auto-remediation hook for {tag}: {e}", exc_info=True)
+
                 try:
-                    # Default to 'reset' action for auto-remediation
-                    # Could be made configurable per tag in the future
-                    logger.info(f"Auto-remediation enabled: triggering reset for violation on {tag_name}")
-                    self._remediation_hook('reset', tag_name)
-                    logger.info(f"Auto-remediation hook called successfully for {tag_name}")
+                    if EVENTLET_AVAILABLE:
+                        eventlet.spawn(_run_remediation, 'reset', _tag)
+                        logger.debug(f"Auto-remediation dispatched as eventlet greenlet for {_tag}")
+                    else:
+                        threading.Thread(
+                            target=_run_remediation,
+                            args=('reset', _tag),
+                            daemon=True,
+                        ).start()
+                        logger.debug(f"Auto-remediation dispatched as daemon thread for {_tag}")
                 except Exception as e:
-                    logger.error(f"Error triggering auto-remediation: {e}", exc_info=True)
+                    logger.error(f"Failed to dispatch auto-remediation for {_tag}: {e}", exc_info=True)
             elif is_new_violation:
-                # Log why auto-remediation didn't trigger (only for new violations) at INFO level
+                # Log why auto-remediation didn't trigger (only for new violations)
                 reasons = []
                 if not self.config.remediation.auto_remediate:
                     reasons.append("auto_remediate is False")
                 if not self._remediation_hook:
                     reasons.append("remediation hook not set")
                 if reasons:
-                    logger.info(f"Auto-remediation not triggered for {tag_name}: {', '.join(reasons)}")
+                    logger.debug(f"Auto-remediation not triggered for {tag_name}: {', '.join(reasons)}")
                 else:
-                    logger.info(f"Auto-remediation not triggered for {tag_name}: unknown reason")
+                    logger.debug(f"Auto-remediation not triggered for {tag_name}: unknown reason")
         else:
             # No violation detected - check if we need to resolve an existing one
             # Require multiple consecutive normal readings before resolving (stability period)
@@ -582,8 +602,7 @@ class MonitorService:
     def clear_violation(self, tag_name: str) -> None:
         """Clear a violation for a specific tag.
 
-        After clearing, immediately re-check if the current value is still violating.
-        If it is, re-add it as a new violation so it can trigger remediation again.
+        The next monitor poll cycle will re-detect the violation if the value is still out of range.
 
         Args:
             tag_name: Name of the tag to clear violation for (should be config key, not PLC tag name)
@@ -600,14 +619,7 @@ class MonitorService:
             else:
                 logger.warning(f"Attempted to clear violation for '{tag_name}' but it's not in _active_violations. Active violations: {list(self._active_violations.keys())}")
 
-        # After clearing, immediately re-check if the current value is still violating
-        # This ensures that if remediation didn't fix the issue, the violation is re-detected
-        if tag_name in self._current_values:
-            current_result = self._current_values[tag_name]
-            if current_result.success:
-                logger.debug(f"Re-checking violation status for '{tag_name}' after clearing (current value: {current_result.value})")
-                # Re-evaluate threshold to see if violation still exists
-                self._evaluate_threshold(tag_name, current_result.value, current_result.timestamp)
+        # The next poll cycle will re-detect the violation if the value is still out of range.
 
     def get_statistics(self) -> Dict[str, Any]:
         """Get monitoring statistics.
@@ -632,7 +644,7 @@ class MonitorService:
                 'uptime_seconds': uptime,
                 'total_tag_reads': self._total_reads,
                 'total_violations': self._total_violations,
-                'active_violations': len(self.get_active_violations()),
+                'active_violations': len([v for v in self._active_violations.values() if not v.resolved]),
                 'connection_uptime_percent': connection_uptime_percent,
                 'connection_stats': connection_stats.to_dict()
             }

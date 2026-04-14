@@ -80,6 +80,10 @@ class MonitorService:
         # Remediation trigger hook (set by app initialization)
         self._remediation_hook: Optional[Callable[[str], None]] = None
 
+        # Consecutive full-cycle failure tracking for graceful PLC recovery
+        self._consecutive_poll_failures: int = 0
+        self._MAX_CONSECUTIVE_POLL_FAILURES: int = 5
+
     def set_chaos_hook(self, hook: Callable[[str, Any], Any]) -> None:
         """Set chaos injection hook.
 
@@ -199,26 +203,28 @@ class MonitorService:
                 tag_names.append(actual_tag_name)
 
             # Check connection health before attempting reads
+            _connection_ok = True
             if not self.plc_client.check_connection_health():
                 logger.warning("PLC connection health check failed in poll cycle, attempting reconnect")
                 if not self.plc_client.connect():
-                    logger.error("Failed to reconnect to PLC in poll cycle, skipping this cycle")
-                    return  # Skip this poll cycle if connection fails
+                    logger.error("Failed to reconnect to PLC in poll cycle, skipping reads this cycle")
+                    _connection_ok = False  # Fall through to failure counting and recovery logic below
 
             # Read all tags using actual PLC tag names (OUTSIDE the lock to avoid blocking API requests)
             # Wrap in try-except to prevent blocking on read failures
-            try:
-                results = self.plc_client.read_tags(tag_names)
-                logger.debug(f"Read tags results: {[(k, v.success, v.value if v.success else v.error) for k, v in results.items()]}")
-            except Exception as e:
-                logger.error(f"Error reading tags in poll cycle: {e}", exc_info=True)
-                # Continue with empty results to avoid blocking
-                results = {}
-                # Try to reconnect for next cycle
+            if _connection_ok:
                 try:
-                    self.plc_client.connect()
-                except Exception as reconnect_error:
-                    logger.warning(f"Failed to reconnect after read error: {reconnect_error}")
+                    results = self.plc_client.read_tags(tag_names)
+                    logger.debug(f"Read tags results: {[(k, v.success, v.value if v.success else v.error) for k, v in results.items()]}")
+                except Exception as e:
+                    logger.error(f"Error reading tags in poll cycle: {e}", exc_info=True)
+                    # Continue with empty results to avoid blocking
+                    results = {}
+                    # Try to reconnect for next cycle
+                    try:
+                        self.plc_client.connect()
+                    except Exception as reconnect_error:
+                        logger.warning(f"Failed to reconnect after read error: {reconnect_error}")
         except Exception as e:
             logger.error(f"Error in poll cycle: {e}", exc_info=True)
             # Don't let poll cycle errors stop the monitor service
@@ -294,6 +300,42 @@ class MonitorService:
         for tag_name, value, timestamp in threshold_evaluations:
             logger.debug(f"Calling _evaluate_threshold for tag_name='{tag_name}' (config key), value={value}")
             self._evaluate_threshold(tag_name, value, timestamp)
+
+        # Track consecutive all-fail cycles and trigger clean reconnect for graceful recovery
+        successful_reads = sum(1 for r in results.values() if r.success)
+        if len(results) == 0 or successful_reads == 0:
+            self._consecutive_poll_failures += 1
+            logger.debug(
+                f"Poll cycle produced no successful reads "
+                f"(consecutive failures: {self._consecutive_poll_failures})"
+            )
+            if self._consecutive_poll_failures >= self._MAX_CONSECUTIVE_POLL_FAILURES:
+                logger.warning(
+                    f"PLC unresponsive for {self._consecutive_poll_failures} consecutive poll cycles, "
+                    "forcing clean reconnect for recovery"
+                )
+                self._emit_event(EventType.CONNECTION_LOST, {
+                    'message': (
+                        f'PLC unresponsive for {self._consecutive_poll_failures} cycles, '
+                        'attempting recovery reconnect'
+                    )
+                }, Severity.ERROR)
+                try:
+                    self.plc_client.disconnect()
+                except Exception as e:
+                    logger.warning(f"Error during forced disconnect in recovery: {e}")
+                try:
+                    self.plc_client.connect()
+                except Exception as e:
+                    logger.warning(f"Error during forced reconnect in recovery: {e}")
+                self._consecutive_poll_failures = 0  # Reset regardless of reconnect outcome
+        else:
+            if self._consecutive_poll_failures > 0:
+                logger.info(
+                    f"PLC recovering: {successful_reads} successful read(s) after "
+                    f"{self._consecutive_poll_failures} failure cycle(s)"
+                )
+            self._consecutive_poll_failures = 0
 
         # Check connection state changes OUTSIDE the lock to avoid blocking eventlet
         current_connected = self.plc_client.is_connected()
@@ -473,6 +515,8 @@ class MonitorService:
         else:
             # No violation detected - check if we need to resolve an existing one
             # Require multiple consecutive normal readings before resolving (stability period)
+            resolution_event_data = None
+            resolved_violation = False
             with self._lock:
                 if tag_name in self._active_violations:
                     # Increment normal reading count
@@ -491,18 +535,31 @@ class MonitorService:
                         # Remove from tracking
                         del self._normal_readings_count[tag_name]
 
-                        # Emit resolution event (outside lock)
-                        self._emit_event(EventType.THRESHOLD_VIOLATION, {
+                        # Defer event emission until after lock release
+                        resolution_event_data = {
                             'tag_name': tag_name,
                             'resolved': True,
                             'message': f'Threshold violation resolved for {tag_name}'
-                        }, Severity.INFO, tag_name)
-
-                        logger.info(f"Threshold violation resolved for {tag_name} after {self._violation_resolution_stability_polls} consecutive normal readings")
+                        }
+                        resolved_violation = True
                 else:
                     # No active violation, reset normal reading count
                     if tag_name in self._normal_readings_count:
                         del self._normal_readings_count[tag_name]
+
+            if resolution_event_data:
+                self._emit_event(
+                    EventType.THRESHOLD_VIOLATION,
+                    resolution_event_data,
+                    Severity.INFO,
+                    tag_name
+                )
+
+            if resolved_violation:
+                logger.info(
+                    f"Threshold violation resolved for {tag_name} after "
+                    f"{self._violation_resolution_stability_polls} consecutive normal readings"
+                )
 
     def _emit_event(self, event_type: EventType, data: Dict[str, Any],
                    severity: Severity, tag_name: Optional[str] = None) -> None:

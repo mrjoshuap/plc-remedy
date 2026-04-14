@@ -1,5 +1,6 @@
 """REST API routes for PLC Self-Healing Middleware."""
 import logging
+import threading
 import uuid
 from datetime import datetime
 from typing import Dict, Any, Optional
@@ -22,6 +23,7 @@ _socketio = None
 _remediation_jobs: Dict[str, Dict[str, Any]] = {}
 _last_remediation_time: Dict[str, datetime] = {}  # Per-tag remediation cooldown tracking
 _last_remediation_time_global: Optional[datetime] = None  # Global cooldown for general remediation (no tag)
+_remediation_lock = threading.Lock()  # Serializes concurrent remediation claim attempts
 _last_job_status_check: Dict[str, datetime] = {}  # Track last time each job was checked (rate limiting)
 JOB_STATUS_CHECK_INTERVAL_SECONDS = 2  # Minimum time between checking the same job (reduced from 3 to allow more frequent checks)
 
@@ -273,22 +275,47 @@ def _is_tag_in_remediation_cooldown(tag_name: Optional[str]) -> tuple:
     cooldown = _config.remediation.cooldown_seconds
     now = datetime.now()
 
-    if tag_name:
-        # Check per-tag cooldown
-        if tag_name in _last_remediation_time:
-            elapsed = (now - _last_remediation_time[tag_name]).total_seconds()
-            if elapsed < cooldown:
-                remaining = cooldown - elapsed
-                return (True, remaining)
-    else:
-        # Check global cooldown for general remediation
-        if _last_remediation_time_global:
-            elapsed = (now - _last_remediation_time_global).total_seconds()
-            if elapsed < cooldown:
-                remaining = cooldown - elapsed
-                return (True, remaining)
+    # Always check global cooldown first — any prior remediation blocks all per-tag ones too
+    if _last_remediation_time_global:
+        elapsed = (now - _last_remediation_time_global).total_seconds()
+        if elapsed < cooldown:
+            return (True, cooldown - elapsed)
+
+    # Also check per-tag cooldown
+    if tag_name and tag_name in _last_remediation_time:
+        elapsed = (now - _last_remediation_time[tag_name]).total_seconds()
+        if elapsed < cooldown:
+            return (True, cooldown - elapsed)
 
     return (False, 0.0)
+
+
+def _claim_remediation_slot(tag_name: Optional[str]) -> tuple:
+    """Atomically check cooldown and claim a remediation slot if available.
+
+    This is the single serialization point for all remediation attempts.
+    On success the cooldown timestamps are already updated before the lock
+    is released, so concurrent callers that arrive later will see the new
+    timestamps and return (False, remaining).
+
+    Args:
+        tag_name: Tag name to check, or None for global cooldown
+
+    Returns:
+        Tuple of (allowed, remaining_seconds). If allowed is True the caller
+        MUST proceed — the cooldown slot has already been consumed.
+    """
+    global _last_remediation_time, _last_remediation_time_global
+    with _remediation_lock:
+        is_in_cooldown, remaining = _is_tag_in_remediation_cooldown(tag_name)
+        if is_in_cooldown:
+            return (False, remaining)
+        # Stamp cooldown BEFORE releasing the lock so racing callers see it immediately
+        now = datetime.now()
+        _last_remediation_time_global = now   # Always stamp global to block all per-tag races
+        if tag_name:
+            _last_remediation_time[tag_name] = now
+        return (True, 0.0)
 
 
 def _trigger_remediation(action: str, tag_name: Optional[str] = None) -> tuple:
@@ -301,17 +328,15 @@ def _trigger_remediation(action: str, tag_name: Optional[str] = None) -> tuple:
     Returns:
         API response tuple
     """
-    global _last_remediation_time, _last_remediation_time_global
-
     if not _aap_client:
         return _api_response(False, None, 'AAP client not initialized', 503)
 
     if not _config:
         return _api_response(False, None, 'Configuration not loaded', 503)
 
-    # Check cooldown (per-tag or global)
-    is_in_cooldown, remaining = _is_tag_in_remediation_cooldown(tag_name)
-    if is_in_cooldown:
+    # Atomically check and claim a remediation slot (serializes concurrent attempts)
+    allowed, remaining = _claim_remediation_slot(tag_name)
+    if not allowed:
         cooldown_type = f"tag '{tag_name}'" if tag_name else "global"
         return _api_response(
             False, None,
@@ -347,15 +372,6 @@ def _trigger_remediation(action: str, tag_name: Optional[str] = None) -> tuple:
         }
 
         _remediation_jobs[job_id] = remediation_job
-
-        # Update cooldown (per-tag or global)
-        now = datetime.now()
-        if tag_name:
-            _last_remediation_time[tag_name] = now
-            logger.debug(f"Updated per-tag cooldown for '{tag_name}'")
-        else:
-            _last_remediation_time_global = now
-            logger.debug("Updated global remediation cooldown")
 
         # Emit event
         if _socketio:
@@ -442,13 +458,14 @@ def get_remediation_status():
         now = datetime.now()
 
         # Clean up old cooldown entries (older than 1 hour)
-        tags_to_remove = [
-            tag for tag, last_time in _last_remediation_time.items()
-            if (now - last_time).total_seconds() > 3600
-        ]
-        for tag in tags_to_remove:
-            del _last_remediation_time[tag]
-            logger.debug(f"Cleaned up old cooldown entry for tag '{tag}'")
+        with _remediation_lock:
+            tags_to_remove = [
+                tag for tag, last_time in _last_remediation_time.items()
+                if (now - last_time).total_seconds() > 3600
+            ]
+            for tag in tags_to_remove:
+                del _last_remediation_time[tag]
+                logger.debug(f"Cleaned up old cooldown entry for tag '{tag}'")
 
         # Clean up old job status check entries (older than 1 hour)
         job_checks_to_remove = [

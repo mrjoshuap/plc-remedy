@@ -114,3 +114,82 @@ def test_monitor_service_get_statistics(monitor_service):
     assert 'uptime_seconds' in stats
     assert 'total_tag_reads' in stats
     assert 'total_violations' in stats
+
+
+def test_violation_resolution_emits_without_deadlock(app_config, mock_plc_client):
+    """Resolution path should emit outside lock and not deadlock."""
+    socketio = Mock()
+    monitor = MonitorService(app_config, mock_plc_client, socketio=socketio)
+
+    # Create an active violation first.
+    monitor._evaluate_threshold("motor_speed", 2500, datetime.now())
+    assert "motor_speed" in monitor._active_violations
+
+    # Feed enough normal readings to resolve the violation.
+    monitor._evaluate_threshold("motor_speed", 1750, datetime.now())
+    monitor._evaluate_threshold("motor_speed", 1750, datetime.now())
+    monitor._evaluate_threshold("motor_speed", 1750, datetime.now())
+
+    # Violation should be resolved and event emission should have occurred.
+    assert monitor._active_violations["motor_speed"].resolved is True
+    assert socketio.emit.called
+    emitted_event_names = [call.args[0] for call in socketio.emit.call_args_list]
+    assert EventType.THRESHOLD_VIOLATION.value in emitted_event_names
+
+
+def test_poll_cycle_continues_after_violation_resolution(app_config):
+    """Poll cycles should continue appending history after recovery."""
+    socketio = Mock()
+    client = MagicMock(spec=PLCClient)
+    client.is_connected.return_value = True
+    client.check_connection_health.return_value = True
+    client.connect.return_value = True
+    client.disconnect.return_value = None
+    client.get_connection_stats.return_value = Mock(
+        connected=True,
+        last_successful_read=datetime.now(),
+        total_reads=0,
+        total_errors=0,
+        connection_start_time=datetime.now(),
+        last_error=None,
+        to_dict=lambda: {}
+    )
+
+    # Sequence: fail speed once -> then three normal readings (resolution) -> keep normal
+    read_sequence = [
+        {
+            "Light_Status": Mock(success=True, value=True, timestamp=datetime.now(), error=None),
+            "Motor_Speed": Mock(success=True, value=2500, timestamp=datetime.now(), error=None),
+        },
+        {
+            "Light_Status": Mock(success=True, value=True, timestamp=datetime.now(), error=None),
+            "Motor_Speed": Mock(success=True, value=1750, timestamp=datetime.now(), error=None),
+        },
+        {
+            "Light_Status": Mock(success=True, value=True, timestamp=datetime.now(), error=None),
+            "Motor_Speed": Mock(success=True, value=1750, timestamp=datetime.now(), error=None),
+        },
+        {
+            "Light_Status": Mock(success=True, value=True, timestamp=datetime.now(), error=None),
+            "Motor_Speed": Mock(success=True, value=1750, timestamp=datetime.now(), error=None),
+        },
+        {
+            "Light_Status": Mock(success=True, value=True, timestamp=datetime.now(), error=None),
+            "Motor_Speed": Mock(success=True, value=1755, timestamp=datetime.now(), error=None),
+        },
+        {
+            "Light_Status": Mock(success=True, value=True, timestamp=datetime.now(), error=None),
+            "Motor_Speed": Mock(success=True, value=1748, timestamp=datetime.now(), error=None),
+        },
+    ]
+    client.read_tags.side_effect = read_sequence
+
+    monitor = MonitorService(app_config, client, socketio=socketio)
+
+    for _ in range(len(read_sequence)):
+        monitor._poll_cycle()
+
+    # Ensure polling continued after resolution and history kept growing.
+    speed_history = monitor.get_tag_history("motor_speed")
+    assert len(speed_history) == len(read_sequence)
+    assert speed_history[-1]["value"] == 1748

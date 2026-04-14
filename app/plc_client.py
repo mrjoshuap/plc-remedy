@@ -34,6 +34,11 @@ class PLCClient:
             connection_start_time=None
         )
 
+        # Reconnect backoff: prevent hammering an unresponsive PLC with rapid retries
+        self._last_reconnect_attempt: Optional[float] = None
+        self._reconnect_backoff_seconds: float = 1.0
+        self._max_reconnect_backoff_seconds: float = 30.0
+
     def connect(self) -> bool:
         """Establish connection to PLC.
 
@@ -45,6 +50,18 @@ class PLCClient:
             if self._driver is not None and self._driver.connected:
                 logger.debug("PLC already connected")
                 return True
+
+        # Enforce reconnect backoff: don't hammer an unresponsive PLC each poll cycle
+        with self._lock:
+            if self._last_reconnect_attempt is not None:
+                elapsed = time.time() - self._last_reconnect_attempt
+                if elapsed < self._reconnect_backoff_seconds:
+                    logger.debug(
+                        f"Reconnect backoff: waiting {self._reconnect_backoff_seconds:.1f}s, "
+                        f"{elapsed:.2f}s elapsed since last attempt"
+                    )
+                    return False
+            self._last_reconnect_attempt = time.time()
 
         # Perform connection OUTSIDE lock to avoid blocking other operations
         try:
@@ -98,12 +115,18 @@ class PLCClient:
                     self._stats.connected = True
                     self._stats.connection_start_time = datetime.now()
                     self._stats.last_successful_read = datetime.now()
+                    self._reconnect_backoff_seconds = 1.0  # Reset backoff on success
+                    self._last_reconnect_attempt = None
                     logger.info(f"Successfully connected to PLC at {self.config.ip_address} (protocol_mode={self.config.protocol_mode}, mock_mode={self.config.mock_mode})")
                     return True
                 else:
                     logger.error("Failed to connect to PLC: driver reports not connected")
                     self._driver = None
                     self._stats.connected = False
+                    self._reconnect_backoff_seconds = min(
+                        self._reconnect_backoff_seconds * 2.0,
+                        self._max_reconnect_backoff_seconds
+                    )
                     return False
 
         except (CommError, RequestError, Exception) as e:
@@ -144,6 +167,8 @@ class PLCClient:
                                     self._stats.connected = True
                                     self._stats.connection_start_time = datetime.now()
                                     self._stats.last_successful_read = datetime.now()
+                                    self._reconnect_backoff_seconds = 1.0  # Reset backoff on success
+                                    self._last_reconnect_attempt = None
                                     logger.info("Connection usable despite error - continuing in mock mode")
                                     return True
                         except Exception:
@@ -155,6 +180,10 @@ class PLCClient:
                         if self._driver is not None:
                             self._driver = None
                         self._stats.connected = False
+                        self._reconnect_backoff_seconds = min(
+                            self._reconnect_backoff_seconds * 2.0,
+                            self._max_reconnect_backoff_seconds
+                        )
                         return False
 
                 # For real PLCs or non-mock-mode, treat all errors as fatal
@@ -166,6 +195,10 @@ class PLCClient:
                     self._stats.connected = False
                     self._stats.total_errors += 1
                     self._stats.last_error = error_msg
+                    self._reconnect_backoff_seconds = min(
+                        self._reconnect_backoff_seconds * 2.0,
+                        self._max_reconnect_backoff_seconds
+                    )
                 return False
 
     def disconnect(self) -> None:

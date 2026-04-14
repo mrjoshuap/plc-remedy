@@ -220,36 +220,30 @@ class CIPPLC:
             raise
 
     def _run_server(self):
-        """Run the cpppo server (internal)."""
-        try:
-            # Try different import approaches to find the correct main function
-            import sys
+        """Run the cpppo server with automatic restart on crash.
 
-            # Import the main module first, then get the main function from it
+        enip_main() can crash under load (rapid mode changes, concurrent connections).
+        This method restarts it automatically with exponential backoff so the PLC
+        continues generating tag values regardless of transient failures.
+        """
+        try:
             import cpppo.server.enip.main as enip_main_module
 
-            # Get the main function from the module
-            if hasattr(enip_main_module, 'main'):
-                enip_main = enip_main_module.main
-            else:
-                # If no 'main' attribute, the module itself might be callable (unlikely but handle it)
+            if not hasattr(enip_main_module, 'main'):
                 raise AttributeError("cpppo.server.enip.main module has no 'main' attribute")
+            enip_main = enip_main_module.main
 
-            # Final verification
             if not callable(enip_main):
                 raise TypeError(f"enip_main is not callable, it's a {type(enip_main)}")
 
-            # Set global tag manager BEFORE creating attributes
+            # Set global tag manager BEFORE creating attributes (persists across restarts)
             set_global_tag_manager(self.tag_manager)
 
-            # Build tag definitions for cpppo
-            # Format: name -> (CIP_type_string, count)
+            # Build tag definitions for cpppo once — shared across all restart attempts
             cpppo_tag_defs = {}
             for tag_name in self.tag_manager.list_tags():
                 tag_info = self.tag_manager.get_tag_info(tag_name)
                 tag_type = tag_info["type"]
-
-                # Map to cpppo type strings
                 if tag_type == "BOOL":
                     cpppo_type = "BOOL"
                 elif tag_type in ["INT", "DINT"]:
@@ -258,59 +252,104 @@ class CIPPLC:
                     cpppo_type = "REAL"
                 else:
                     cpppo_type = "DINT"
-
                 cpppo_tag_defs[tag_name] = (cpppo_type, 1)  # Scalar tags
 
-            # Build address string
             address = f"{self.ip}:{self.port}"
 
-            # Prepare arguments for enip_main
-            # cpppo expects tags as command-line arguments in format: TAG=TYPE[count]
-            # e.g., Light_Status=BOOL, Motor_Speed=DINT
+            # Build cpppo tag args in cpppo CLI format (e.g. "Motor_Speed=DINT")
+            tag_args = []
+            for tag_name, (tag_type, count) in cpppo_tag_defs.items():
+                if count > 1:
+                    tag_args.append(f"{tag_name}={tag_type}[{count}]")
+                else:
+                    tag_args.append(f"{tag_name}={tag_type}")
+
+            # cpppo reads sys.argv internally (not only through the args= parameter),
+            # so we must set sys.argv to the cpppo-compatible form before each call.
+            # The original argv is restored in the finally block below.
+            import sys
             original_argv = sys.argv
+            cpppo_argv = [
+                'cip_plc.py',
+                '--address', address,
+                '--print',
+                '-v',
+            ] + tag_args
+
+            logger.info(f"CIP PLC server starting with cpppo on {address}")
+            logger.info(f"Tags: {list(cpppo_tag_defs.keys())}")
+            logger.info("Waiting for connections...")
+
+            restart_delay = 2.0
+            restart_count = 0
+            max_restarts = 20
+
             try:
-                # Build tag arguments in cpppo format
-                tag_args = []
-                for tag_name, (tag_type, count) in cpppo_tag_defs.items():
-                    if count > 1:
-                        tag_args.append(f"{tag_name}={tag_type}[{count}]")
-                    else:
-                        tag_args.append(f"{tag_name}={tag_type}")
+                while self.running:
+                    try:
+                        if restart_count > 0:
+                            logger.info(
+                                f"CIP PLC server restarting (attempt {restart_count + 1}/{max_restarts})"
+                            )
+                            set_global_tag_manager(self.tag_manager)
 
-                sys.argv = [
-                    'cip_plc.py',
-                    '--address', address,
-                    '--print',  # Print I/O access for debugging
-                    '-v',  # Verbose logging
-                ] + tag_args  # Add tag definitions as command-line arguments
+                        sys.argv = cpppo_argv
+                        enip_main(attribute_class=ModeAwareAttribute, args=sys.argv[1:])
 
-                logger.info(f"CIP PLC server starting with cpppo on {address}")
-                logger.info(f"Tags: {list(cpppo_tag_defs.keys())}")
-                logger.info("Waiting for connections...")
+                        # enip_main returned without raising — only expected during shutdown
+                        if not self.running:
+                            logger.info("cpppo server stopped cleanly")
+                            break
+                        # Still running but enip_main exited — treat as a crash
+                        raise RuntimeError("enip_main returned unexpectedly while server is running")
 
-                # Run cpppo server with ModeAwareAttribute class
-                # enip_main will parse sys.argv and create ModeAwareAttribute instances with (name, parser) signature
-                # Note: enip_main is a blocking call - if it hangs, the server thread will appear stuck
-                try:
-                    logger.debug("Calling enip_main - this is a blocking call")
-                    enip_main(
-                        attribute_class=ModeAwareAttribute,
-                        args=sys.argv[1:]  # Pass all args including tag definitions
-                    )
-                    logger.info("enip_main returned (server stopped normally)")
-                except Exception as e:
-                    logger.error(f"enip_main raised an exception: {e}", exc_info=True)
-                    raise
+                    except KeyboardInterrupt:
+                        logger.info("CIP PLC server interrupted")
+                        self.running = False
+                        break
+
+                    except (SystemExit, Exception) as e:
+                        # Any exit while self.running is True is treated as a crash.
+                        # cpppo calls sys.exit() (SystemExit) on protocol errors, socket
+                        # resets, or unexpected client behaviour — not just clean shutdowns.
+                        # KeyboardInterrupt is handled separately above.
+                        if not self.running:
+                            # Server was asked to stop; the exit is expected
+                            exit_code = e.code if isinstance(e, SystemExit) else None
+                            logger.info(f"cpppo server stopped (exit={exit_code})")
+                            break
+
+                        restart_count += 1
+                        exit_info = (
+                            f"sys.exit({e.code})" if isinstance(e, SystemExit) else str(e)
+                        )
+                        if restart_count >= max_restarts:
+                            logger.error(
+                                f"CIP PLC server failed {restart_count} times, giving up. "
+                                f"Last exit: {exit_info}"
+                            )
+                            self.running = False
+                            break
+
+                        logger.error(
+                            f"CIP PLC server stopped unexpectedly ({exit_info}). "
+                            f"Restarting in {restart_delay:.1f}s "
+                            f"(attempt {restart_count}/{max_restarts})"
+                        )
+                        # Interruptible sleep — exits early if self.running is cleared
+                        waited = 0.0
+                        while waited < restart_delay and self.running:
+                            time.sleep(0.5)
+                            waited += 0.5
+                        restart_delay = min(restart_delay * 1.5, 30.0)
             finally:
                 sys.argv = original_argv
 
         except KeyboardInterrupt:
-            logger.info("CIP PLC server interrupted")
+            logger.info("CIP PLC server interrupted during setup")
             self.running = False
         except Exception as e:
-            logger.error(f"Server thread error: {e}", exc_info=True)
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Fatal server setup error: {e}", exc_info=True)
             self.running = False
 
     def stop(self):
@@ -332,10 +371,23 @@ class CIPPLC:
             if not self.running:
                 break
             current_time = time.time()
-            # Log periodic health check every 30 seconds
+
+            # Check whether the CIP server thread is still alive
+            if self.server_thread and not self.server_thread.is_alive():
+                logger.warning(
+                    "CIP PLC watchdog: server thread has exited "
+                    "(restart loop in _run_server will handle recovery if running=True)"
+                )
+
+            # Periodic health log every 30 seconds
             elapsed = current_time - last_log
             if elapsed >= 30:
-                logger.debug("CIP PLC watchdog: server process appears responsive")
+                alive = self.server_thread.is_alive() if self.server_thread else False
+                logger.debug(
+                    f"CIP PLC watchdog: server_thread alive={alive}, "
+                    f"mode={self.tag_manager.mode.value}, "
+                    f"reads={self.tag_manager.read_count}"
+                )
                 last_log = current_time
 
     def _stats_logger_thread(self):

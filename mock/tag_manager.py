@@ -1,4 +1,5 @@
 """Tag management with operating mode support for CIP PLC simulator."""
+import threading
 import time
 import random
 import logging
@@ -77,15 +78,18 @@ class TagManager:
         self.read_count = 0
         self.write_count = 0
 
+        self._lock = threading.Lock()
+
     def set_mode(self, mode: OperatingMode):
         """Change operating mode.
 
         Args:
             mode: New operating mode
         """
-        self.mode = mode
-        self.degradation_start = time.time()
-        self.degradation_progress = 0.0
+        with self._lock:
+            self.mode = mode
+            self.degradation_start = time.time()
+            self.degradation_progress = 0.0
         logger.info(f"Tag manager mode changed to {mode.value}")
 
     def get_tag_value(self, tag_name: str) -> Any:
@@ -100,24 +104,25 @@ class TagManager:
         Raises:
             KeyError: If tag doesn't exist
         """
-        if tag_name not in self.tags:
-            raise KeyError(f"Tag {tag_name} not found")
+        with self._lock:
+            if tag_name not in self.tags:
+                raise KeyError(f"Tag {tag_name} not found")
 
-        tag_data = self.tags[tag_name]
-        base_value = tag_data["value"]
-        tag_type = tag_data.get("type", "DINT")
-        nominal = tag_data.get("nominal", base_value)
+            tag_data = self.tags[tag_name]
+            base_value = tag_data["value"]
+            tag_type = tag_data.get("type", "DINT")
+            nominal = tag_data.get("nominal", base_value)
 
-        self.read_count += 1
+            self.read_count += 1
 
-        if self.mode == OperatingMode.NORMAL:
-            return self._get_normal_value(tag_data, tag_type, nominal, base_value)
-        elif self.mode == OperatingMode.DEGRADED:
-            return self._get_degraded_value(tag_data, tag_type, nominal, base_value)
-        elif self.mode == OperatingMode.FAILED:
-            return self._get_failed_value(tag_data, tag_type, nominal, base_value)
-        else:  # UNRESPONSIVE
-            return base_value  # Won't be sent anyway
+            if self.mode == OperatingMode.NORMAL:
+                return self._get_normal_value(tag_data, tag_type, nominal, base_value)
+            elif self.mode == OperatingMode.DEGRADED:
+                return self._get_degraded_value(tag_data, tag_type, nominal, base_value)
+            elif self.mode == OperatingMode.FAILED:
+                return self._get_failed_value(tag_data, tag_type, nominal, base_value)
+            else:  # UNRESPONSIVE
+                return base_value  # Won't be sent anyway
 
     def _get_normal_value(self, tag_data: Dict, tag_type: str, nominal: Any, base_value: Any) -> Any:
         """Get value in normal mode (with small variance)."""
@@ -205,30 +210,31 @@ class TagManager:
         Returns:
             True if successful, False otherwise
         """
-        if tag_name not in self.tags:
-            logger.warning(f"Attempted to write non-existent tag: {tag_name}")
-            return False
+        with self._lock:
+            if tag_name not in self.tags:
+                logger.warning(f"Attempted to write non-existent tag: {tag_name}")
+                return False
 
-        tag_data = self.tags[tag_name]
+            tag_data = self.tags[tag_name]
 
-        # Validate type
-        tag_type = tag_data.get("type", "DINT")
-        try:
-            if tag_type == "BOOL":
-                tag_data["value"] = bool(value)
-            elif tag_type in ["INT", "DINT"]:
-                tag_data["value"] = int(value)
-            elif tag_type == "REAL":
-                tag_data["value"] = float(value)
-            else:
-                tag_data["value"] = value
+            # Validate type
+            tag_type = tag_data.get("type", "DINT")
+            try:
+                if tag_type == "BOOL":
+                    tag_data["value"] = bool(value)
+                elif tag_type in ["INT", "DINT"]:
+                    tag_data["value"] = int(value)
+                elif tag_type == "REAL":
+                    tag_data["value"] = float(value)
+                else:
+                    tag_data["value"] = value
 
-            self.write_count += 1
-            logger.debug(f"Tag {tag_name} set to {tag_data['value']}")
-            return True
-        except (ValueError, TypeError) as e:
-            logger.error(f"Failed to set tag {tag_name}: {e}")
-            return False
+                self.write_count += 1
+                logger.debug(f"Tag {tag_name} set to {tag_data['value']}")
+                return True
+            except (ValueError, TypeError) as e:
+                logger.error(f"Failed to set tag {tag_name}: {e}")
+                return False
 
     def get_tag_info(self, tag_name: str) -> Optional[Dict[str, Any]]:
         """Get tag information (type, dimensions, etc.).
@@ -239,16 +245,16 @@ class TagManager:
         Returns:
             Tag information dictionary or None if not found
         """
-        if tag_name not in self.tags:
-            return None
-
-        tag_data = self.tags[tag_name]
-        return {
-            "name": tag_name,
-            "type": tag_data.get("type", "DINT"),
-            "nominal": tag_data.get("nominal"),
-            "current_value": self.get_tag_value(tag_name)
-        }
+        with self._lock:
+            if tag_name not in self.tags:
+                return None
+            tag_data = self.tags[tag_name]
+            return {
+                "name": tag_name,
+                "type": tag_data.get("type", "DINT"),
+                "nominal": tag_data.get("nominal"),
+                "current_value": tag_data.get("value"),
+            }
 
     def list_tags(self) -> list:
         """List all available tag names.
@@ -256,7 +262,8 @@ class TagManager:
         Returns:
             List of tag names
         """
-        return list(self.tags.keys())
+        with self._lock:
+            return list(self.tags.keys())
 
     def add_tag(self, tag_name: str, tag_type: str, initial_value: Any, **kwargs):
         """Add a new tag.
@@ -267,12 +274,13 @@ class TagManager:
             initial_value: Initial value
             **kwargs: Additional tag properties (nominal, variance, etc.)
         """
-        self.tags[tag_name] = {
-            "type": tag_type,
-            "value": initial_value,
-            "nominal": kwargs.get("nominal", initial_value),
-            **kwargs
-        }
+        with self._lock:
+            self.tags[tag_name] = {
+                "type": tag_type,
+                "value": initial_value,
+                "nominal": kwargs.get("nominal", initial_value),
+                **kwargs
+            }
         logger.info(f"Added tag {tag_name} of type {tag_type}")
 
     def get_statistics(self) -> Dict[str, Any]:
@@ -281,10 +289,11 @@ class TagManager:
         Returns:
             Dictionary with statistics
         """
-        return {
-            "total_tags": len(self.tags),
-            "read_count": self.read_count,
-            "write_count": self.write_count,
-            "mode": self.mode.value,
-            "degradation_progress": self.degradation_progress
-        }
+        with self._lock:
+            return {
+                "total_tags": len(self.tags),
+                "read_count": self.read_count,
+                "write_count": self.write_count,
+                "mode": self.mode.value,
+                "degradation_progress": self.degradation_progress
+            }

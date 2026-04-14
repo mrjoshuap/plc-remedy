@@ -161,7 +161,7 @@ def create_app():
             from datetime import datetime
             import uuid
             from app.models import RemediationStatus
-            from app.api.routes import _remediation_jobs, _is_tag_in_remediation_cooldown
+            from app.api.routes import _remediation_jobs, _claim_remediation_slot
 
             logger.info(f"Remediation hook called with action: {action}, tag_name: {tag_name} (type: {type(tag_name).__name__})")
             logger.info(f"AAP client available: {aap_client is not None}, enabled: {config.aap.enabled if aap_client else False}")
@@ -174,9 +174,9 @@ def create_app():
                 logger.warning("AAP is disabled in configuration, skipping remediation")
                 return
 
-            # Check per-tag cooldown
-            is_in_cooldown, remaining = _is_tag_in_remediation_cooldown(tag_name)
-            if is_in_cooldown:
+            # Atomically claim a remediation slot (serializes concurrent greenlet attempts)
+            allowed, remaining = _claim_remediation_slot(tag_name)
+            if not allowed:
                 cooldown_type = f"tag '{tag_name}'" if tag_name else "global"
                 logger.info(f"Auto-remediation skipped: cooldown active for {cooldown_type} ({remaining:.1f}s remaining)")
                 return
@@ -214,15 +214,7 @@ def create_app():
                 # Add to API routes' remediation jobs dictionary
                 _remediation_jobs[job_id] = remediation_job
 
-                # Update cooldown in API module (per-tag or global)
-                import app.api.routes as api_routes
-                now = datetime.now()
-                if tag_name:
-                    api_routes._last_remediation_time[tag_name] = now
-                    logger.debug(f"Updated per-tag cooldown for '{tag_name}' in remediation hook")
-                else:
-                    api_routes._last_remediation_time_global = now
-                    logger.debug("Updated global remediation cooldown in remediation hook")
+                # Cooldown was already stamped atomically in _claim_remediation_slot above
 
                 # Emit event
                 if socketio:
